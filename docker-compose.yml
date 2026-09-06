@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: sess_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sess
+      POSTGRES_PASSWORD: sess
+      POSTGRES_DB: sess
+    ports:
+      - "5432:5432"
+    volumes:
+      - sess_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sess -d sess"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sess_pgdata:
