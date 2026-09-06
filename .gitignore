@@ -1,0 +1,34 @@
+# deps / build
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# prisma
+backend/prisma/migrations/dev.db*
+
+# ml artifacts / data (kept out of web repo)
+runs/
+*.pt
+dataset/
+dataset_merged/
+*.zip
+
+# python / notebooks
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# logs / os
+*.log
+.DS_Store
+
+# opencode
+opencode.json
