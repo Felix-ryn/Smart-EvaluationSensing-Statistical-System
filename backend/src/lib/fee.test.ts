@@ -25,4 +25,12 @@ assert.strictEqual(r.totalFee, 0);
 r = calculateParkingFee(new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T15:00:00Z"), rules);
 assert.strictEqual(r.totalFee, 20000);
 
+// 25h = one capped full day (20000) + 1 started hour (2000) = 22000
+r = calculateParkingFee(new Date("2026-01-01T00:00:00Z"), new Date("2026-01-02T01:00:00Z"), rules);
+assert.strictEqual(r.totalFee, 22000);
+
+// 2 full days = 2 * cap = 40000
+r = calculateParkingFee(new Date("2026-01-01T00:00:00Z"), new Date("2026-01-03T00:00:00Z"), rules);
+assert.strictEqual(r.totalFee, 40000);
+
 console.log("fee.test.ts: all assertions passed");
