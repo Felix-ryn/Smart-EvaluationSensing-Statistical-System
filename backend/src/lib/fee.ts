@@ -24,10 +24,14 @@ export function calculateParkingFee(
   let baseFee = 0;
   if (hours >= 1) baseFee = rules.firstHour + (hours - 1) * rules.nextHour;
 
-  // apply daily cap per full 24h block
-  const days = Math.floor(durationMinutes / (24 * 60));
-  const cap = (days + 1) * rules.maximumDaily;
-  const totalFee = Math.min(baseFee, cap);
+  // Daily cap applies PER 24h block independently: full days are each capped at
+  // maximumDaily, and the remaining partial day is capped too. (Old code capped the
+  // whole baseFee against days*cap, which overcharged multi-day stays.)
+  const fullDays = Math.floor(durationMinutes / (24 * 60));
+  const remMinutes = durationMinutes % (24 * 60);
+  const remHours = Math.ceil(remMinutes / 60);
+  const remFee = remHours >= 1 ? rules.firstHour + (remHours - 1) * rules.nextHour : 0;
+  const totalFee = fullDays * rules.maximumDaily + Math.min(remFee, rules.maximumDaily);
 
   const h = Math.floor(durationMinutes / 60);
   const m = durationMinutes % 60;

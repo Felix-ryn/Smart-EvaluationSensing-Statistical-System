@@ -87,7 +87,7 @@ def main():
         # local id -> unified id (None if class dropped)
         id2unified = {}
         for local_id, nm in enumerate(names):
-            key = nm.lower().replace(" ", "")
+            key = nm.lower().replace(" ", "-")  # "slot empty" -> "slot-empty" to match ALIAS
             uni = ALIAS.get(nm.lower()) or ALIAS.get(key)
             if uni is None:
                 print(f"  [WARN] {folder}: class '{nm}' has no mapping -> dropped")

@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { env } from "./env.js";
 import { authRouter } from "./routes/auth.js";
+import { parkingRouter } from "./routes/parking.js";
 import { stubRouter } from "./routes/stub.js";
 import { requireAuth, requireAdmin } from "./middleware/auth.js";
 import { notFound, errorHandler } from "./middleware/error.js";
@@ -15,7 +16,7 @@ app.get("/health", (_req, res) => res.json({ success: true, data: { status: "ok"
 app.use("/api/auth", authRouter);
 
 // Stubbed domains (Phase 5+). Authorization wired now so it's real once handlers land.
-app.use("/api/parking", requireAuth, stubRouter("parking"));
+app.use("/api/parking", requireAuth, parkingRouter);
 app.use("/api/slots", requireAuth, stubRouter("slots"));
 app.use("/api/users", requireAuth, requireAdmin, stubRouter("users"));
 app.use("/api/reports", requireAuth, requireAdmin, stubRouter("reports"));
