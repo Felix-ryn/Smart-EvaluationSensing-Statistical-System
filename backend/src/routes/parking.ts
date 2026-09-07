@@ -1,7 +1,22 @@
 import { Router } from "express";
+import { z } from "zod";
 import { prisma } from "../prisma.js";
+import { requireAuth, requireAdmin } from "../middleware/auth.js";
 
 export const parkingRouter = Router();
+
+const slotStatusSchema = z.object({ status: z.enum(["AVAILABLE", "OCCUPIED", "MAINTENANCE"]) });
+
+// PATCH /api/parking/slots/:id/status — admin-only slot status change.
+parkingRouter.patch("/slots/:id/status", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { status } = slotStatusSchema.parse(req.body);
+    const slot = await prisma.parkingSlot.update({ where: { id: req.params.id }, data: { status } });
+    res.json({ success: true, data: slot });
+  } catch (e) {
+    next(e);
+  }
+});
 
 // GET /api/parking — list active locations with slot availability counts.
 parkingRouter.get("/", async (_req, res, next) => {

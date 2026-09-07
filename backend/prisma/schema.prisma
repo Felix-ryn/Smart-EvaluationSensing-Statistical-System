@@ -47,6 +47,12 @@ enum PaymentStatus {
   FAILED
 }
 
+enum ViolationStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+}
+
 model User {
   id           String    @id @default(uuid())
   name         String
@@ -61,6 +67,7 @@ model User {
   sessions      ParkingSession[]
   payments      Payment[]
   notifications Notification[]
+  violations    Violation[]
 }
 
 model Vehicle {
@@ -92,6 +99,7 @@ model ParkingLocation {
 
   slots    ParkingSlot[]
   sessions ParkingSession[]
+  violations Violation[]
 }
 
 model ParkingSlot {
@@ -170,4 +178,23 @@ model ParkingEvent {
   metadata   Json?
 
   slot ParkingSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+}
+
+model Violation {
+  id            String          @id @default(uuid())
+  photoPath     String // relative path served under /uploads
+  locationId    String?
+  slotCode      String? // best-effort mapped slot (e.g. "A3")
+  violationType String          @default("illegal-parking")
+  confidence    Float?
+  reportedById  String?
+  reporterRole  Role            @default(USER)
+  status        ViolationStatus @default(PENDING)
+  adminNote     String?
+  detections    Json? // raw model output
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  location   ParkingLocation? @relation(fields: [locationId], references: [id])
+  reportedBy User?            @relation(fields: [reportedById], references: [id])
 }

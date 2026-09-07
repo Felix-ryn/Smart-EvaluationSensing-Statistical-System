@@ -11,6 +11,8 @@ export function AdminLayout() {
         <NavLink to="/admin/parking" className={link}><span>Parking</span></NavLink>
         <NavLink to="/admin/users" className={link}><span>Users</span></NavLink>
         <NavLink to="/admin/reports" className={link}><span>Reports</span></NavLink>
+        <NavLink to="/admin/violations" className={link}><span>Pelanggaran</span></NavLink>
+        <NavLink to="/admin/slot-scan" className={link}><span>Pindai Slot</span></NavLink>
         <NavLink to="/admin/settings" className={link}><span>Settings</span></NavLink>
         <NavLink to="/admin/notifications" className={link}><span>Notifications</span></NavLink>
         <div className="spacer" />
@@ -28,6 +30,7 @@ export function UserLayout() {
         <div className="brand">SESS</div>
         <NavLink to="/user/home" className={link}><span>Home</span></NavLink>
         <NavLink to="/user/find-parking" className={link}><span>Find Parking</span></NavLink>
+        <NavLink to="/user/report" className={link}><span>Lapor Pelanggaran</span></NavLink>
         <NavLink to="/user/history" className={link}><span>History</span></NavLink>
         <NavLink to="/user/profile" className={link}><span>Profile</span></NavLink>
         <div className="spacer" />

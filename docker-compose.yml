@@ -17,5 +17,16 @@ services:
       timeout: 5s
       retries: 10
 
+  ai:
+    build: ./ai-service
+    container_name: sess_ai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/models:ro
+    environment:
+      MODEL_PATH: /models/best.pt
+
 volumes:
   sess_pgdata:
