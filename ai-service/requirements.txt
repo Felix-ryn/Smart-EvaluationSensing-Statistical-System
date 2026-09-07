@@ -1,0 +1,6 @@
+# SESS AI service (YOLOv8). Python 3.11 for ultralytics/torch wheel compatibility.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+ultralytics>=8.2
+opencv-python-headless>=4.9

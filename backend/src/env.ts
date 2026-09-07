@@ -10,4 +10,5 @@ export const env = {
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
   port: Number(process.env.PORT ?? 4000),
+  aiServiceUrl: process.env.AI_SERVICE_URL ?? "http://localhost:8000",
 };
