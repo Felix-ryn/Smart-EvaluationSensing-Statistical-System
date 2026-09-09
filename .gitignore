@@ -1,0 +1,10 @@
+
+# Dataset
+dataset_merged/
+dataset_merged.zip
+
+# Python virtual environment
+venv/
+
+# YOLO pretrained model
+notebooks/yolov8n.pt
