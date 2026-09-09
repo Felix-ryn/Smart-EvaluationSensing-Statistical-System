@@ -12,8 +12,7 @@ build/
 # prisma
 backend/prisma/migrations/dev.db*
 
-# ml artifacts / data (kept out of web repo)
-runs/
+# ml artifacts / data
 *.pt
 dataset/
 dataset_merged/
