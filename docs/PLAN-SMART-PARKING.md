@@ -3,6 +3,12 @@
 > Dokumen acuan utama (single source of truth) untuk pengembangan project **Smart Parking**.
 > Bahasa: campuran Bahasa Indonesia + istilah teknis Inggris.
 
+> **CATATAN STACK (penting):** Rencana di bawah menyebut FastAPI + SQLAlchemy + Alembic.
+> Implementasi nyata saat ini memakai **Node.js + TypeScript (Express + Prisma + PostgreSQL/PostGIS)**
+> di `backend/`, frontend **React + Vite** di `frontend/`, dan pipeline CV **Python + YOLOv8**
+> di `scripts/` + `notebooks/`. Bagian arsitektur/struktur di bawah bersifat historis/aspiratif;
+> ikuti kode nyata sebagai acuan.
+
 ---
 
 ## 1. Ringkasan & Latar Belakang

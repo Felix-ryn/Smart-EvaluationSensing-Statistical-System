@@ -1,0 +1,5 @@
+# Python deps for the CV/ML pipeline (scripts/ + notebooks/).
+# Install: pip install -r requirements.txt
+# ponytail: unpinned to latest-compatible; pin exact versions when reproducibility matters.
+ultralytics>=8.2
+torch>=2.2
