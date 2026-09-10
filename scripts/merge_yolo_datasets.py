@@ -31,6 +31,8 @@ SOURCES = [
     ("carpark", "Carpark and License Plate with Illegal parking.v4i.yolov8"),
     ("illegal", "Illegal Parking.v4i.yolov8"),
     ("spots",   "Parking Spots.v3i.yolov8"),
+    ("ilegal2", "ilegal parking 1.v2i.yolov81"),   # Dataset A: YOLOv8 detect, class 'illegal'
+    ("parkingB", "_parkingB_autolabeled"),          # Dataset B: auto-labeled Invalid folder (REVIEW FIRST)
 ]
 
 
