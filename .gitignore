@@ -31,3 +31,10 @@ venv/
 
 # opencode
 opencode.json
+dataset_cleaned/
+
+dataset_merge_old/
+
+dataset_merged_old/
+
+runs/
