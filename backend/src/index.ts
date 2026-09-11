@@ -2,14 +2,15 @@ import express from "express";
 import cors from "cors";
 import { env } from "./env.js";
 import { authRouter } from "./routes/auth.js";
-import { parkingRouter } from "./routes/parking.js";
+import { areasRouter } from "./routes/areas.js";
+import { transactionsRouter } from "./routes/transactions.js";
+import { jukirRouter } from "./routes/jukir.js";
+import { mouRouter } from "./routes/mou.js";
 import { usersRouter } from "./routes/users.js";
 import { reportsRouter } from "./routes/reports.js";
 import { dashboardRouter } from "./routes/dashboard.js";
-import { notificationsRouter } from "./routes/notifications.js";
 import { violationsRouter } from "./routes/violations.js";
 import { detectionsRouter } from "./routes/detections.js";
-import { stubRouter } from "./routes/stub.js";
 import { requireAuth, requireAdmin } from "./middleware/auth.js";
 import { notFound, errorHandler } from "./middleware/error.js";
 import { UPLOAD_DIR } from "./lib/ai.js";
@@ -23,17 +24,16 @@ app.get("/health", (_req, res) => res.json({ success: true, data: { status: "ok"
 
 app.use("/api/auth", authRouter);
 
-// Public read-only: anonymous users can browse parking without login.
-app.use("/api/parking", parkingRouter);
-app.use("/api/slots", stubRouter("slots"));
+// Public read-only: pengguna anonim bisa melihat area tanpa login.
+app.use("/api/areas", areasRouter);
+app.use("/api/transactions", transactionsRouter);
 app.use("/api/dashboard", requireAuth, requireAdmin, dashboardRouter);
+app.use("/api/jukir", jukirRouter);
+app.use("/api/mou", mouRouter);
 app.use("/api/users", requireAuth, requireAdmin, usersRouter);
 app.use("/api/reports", requireAuth, requireAdmin, reportsRouter);
-app.use("/api/notifications", requireAuth, requireAdmin, notificationsRouter);
 app.use("/api/violations", violationsRouter);
-app.use("/api/detections", detectionsRouter); // AI slot scan (admin) — auth inside router
-app.use("/api/payments", requireAuth, stubRouter("payments"));
-app.use("/api/history", requireAuth, stubRouter("history"));
+app.use("/api/detections", detectionsRouter); // AI area scan (admin) — auth di dalam router
 
 app.use(notFound);
 app.use(errorHandler);

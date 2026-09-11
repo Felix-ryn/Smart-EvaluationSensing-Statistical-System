@@ -6,11 +6,14 @@ import { FindParking } from "./pages/FindParking";
 import { RequireAdmin } from "./pages/RequireAdmin";
 import { Dashboard } from "./pages/admin/Dashboard";
 import { Users } from "./pages/admin/Users";
-import { Parking } from "./pages/admin/Parking";
+import { Areas } from "./pages/admin/Areas";
+import { Transactions } from "./pages/admin/Transactions";
+import { Jukir } from "./pages/admin/Jukir";
+import { Mou } from "./pages/admin/Mou";
+import { Reconciliation } from "./pages/admin/Reconciliation";
 import { Reports } from "./pages/admin/Reports";
-import { Notifications } from "./pages/admin/Notifications";
 import { Violations } from "./pages/admin/Violations";
-import { SlotScan } from "./pages/admin/SlotScan";
+import { AreaScan } from "./pages/admin/AreaScan";
 import { ReportViolation } from "./pages/ReportViolation";
 
 export default function App() {
@@ -22,25 +25,22 @@ export default function App() {
       <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
-        <Route path="parking" element={<Parking />} />
-        <Route path="users" element={<Users />} />
+        <Route path="areas" element={<Areas />} />
+        <Route path="transactions" element={<Transactions />} />
+        <Route path="jukir" element={<Jukir />} />
+        <Route path="mou" element={<Mou />} />
+        <Route path="reconciliation" element={<Reconciliation />} />
         <Route path="reports" element={<Reports />} />
         <Route path="violations" element={<Violations />} />
-        <Route path="slot-scan" element={<SlotScan />} />
-        <Route path="settings" element={<Placeholder title="Settings" phase="Phase 8" />} />
-        <Route path="notifications" element={<Notifications />} />
+        <Route path="area-scan" element={<AreaScan />} />
+        <Route path="users" element={<Users />} />
       </Route>
 
       <Route path="/user" element={<UserLayout />}>
         <Route index element={<Navigate to="home" replace />} />
-        <Route path="home" element={<Placeholder title="Home" phase="Phase 9" />} />
+        <Route path="home" element={<Placeholder title="Home" phase="selanjutnya" />} />
         <Route path="find-parking" element={<FindParking />} />
         <Route path="report" element={<ReportViolation />} />
-        <Route path="parking/:id" element={<Placeholder title="Parking Detail" phase="Phase 9" />} />
-        <Route path="parking/:id/live" element={<Placeholder title="Live Parking" phase="Phase 10" />} />
-        <Route path="payment/:sessionId" element={<Placeholder title="Payment" phase="Phase 11" />} />
-        <Route path="history" element={<Placeholder title="History" phase="Phase 9" />} />
-        <Route path="profile" element={<Placeholder title="Profile" phase="Phase 9" />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/user/find-parking" replace />} />

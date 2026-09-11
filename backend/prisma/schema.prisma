@@ -1,6 +1,6 @@
-// SESS Parking — Prisma schema
-// ponytail: PostGIS geometry (slot polygon) not modeled here; Prisma lacks native geometry.
-//   add when Phase 5: use Unsupported("geometry") + raw SQL for spatial queries.
+// Smart Parking System — Prisma schema (Area/Zone based)
+// Konsep baru: parkir berbasis Area + kapasitas (bukan slot fisik per kendaraan).
+// PostGIS tetap dipertahankan sebagai extension (tidak dipakai untuk polygon slot).
 
 generator client {
   provider        = "prisma-client-js"
@@ -23,170 +23,138 @@ enum UserStatus {
   BLOCKED
 }
 
-enum SlotStatus {
-  AVAILABLE
-  OCCUPIED
-  MAINTENANCE
-}
-
-enum LocationStatus {
+enum AreaStatus {
   ACTIVE
   INACTIVE
   MAINTENANCE
 }
 
-enum SessionStatus {
+enum TransactionStatus {
   ACTIVE
   COMPLETED
   CANCELLED
 }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
+enum PaymentMethod {
+  CASH
+  QRIS
 }
 
 enum ViolationStatus {
   PENDING
-  REVIEWED
-  DISMISSED
+  VALID
+  REJECTED
+}
+
+enum JukirStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// Sumber laporan pelanggaran (sesuai konsep: User / Jukir / CCTV)
+enum ViolationSource {
+  USER
+  JUKIR
+  CCTV
 }
 
 model User {
-  id           String    @id @default(uuid())
+  id           String     @id @default(uuid())
   name         String
-  email        String    @unique
+  email        String     @unique
   passwordHash String
-  role         Role      @default(USER)
+  role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  vehicles      Vehicle[]
-  sessions      ParkingSession[]
-  payments      Payment[]
-  notifications Notification[]
-  violations    Violation[]
+  transactions Transaction[]
+  violations   Violation[]
 }
 
-model Vehicle {
-  id          String   @id @default(uuid())
-  userId      String
-  plateNumber String
-  vehicleType String
-  brand       String?
-  model       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model ParkingArea {
+  id          String     @id @default(uuid())
+  name        String
+  location    String // alamat / nama jalan area parkir
+  vehicleType String     @default("motorcycle") // "motorcycle" | "car"
+  capacity    Int // kapasitas ditentukan admin berdasarkan lapangan
+  status      AreaStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessions ParkingSession[]
+  jukirs       Jukir[]
+  transactions Transaction[]
+  detections   CvDetection[]
+  violations   Violation[]
 }
 
-model ParkingLocation {
-  id             String         @id @default(uuid())
-  name           String
-  address        String
-  latitude       Float
-  longitude      Float
-  description    String?
-  operatingStart String? // "HH:mm"
-  operatingEnd   String?
-  status         LocationStatus @default(ACTIVE)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+model Jukir {
+  id        String      @id @default(uuid())
+  name      String
+  areaId    String
+  status    JukirStatus @default(ACTIVE)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
-  slots    ParkingSlot[]
-  sessions ParkingSession[]
-  violations Violation[]
+  area         ParkingArea   @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
 }
 
-model ParkingSlot {
-  id         String     @id @default(uuid())
-  locationId String
-  slotCode   String
-  slotType   String     @default("car")
-  status     SlotStatus @default(AVAILABLE)
-  latitude   Float?
-  longitude  Float?
-  updatedAt  DateTime   @updatedAt
-
-  location ParkingLocation  @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  sessions ParkingSession[]
-  events   ParkingEvent[]
-
-  @@unique([locationId, slotCode])
-}
-
-model ParkingSession {
-  id              String        @id @default(uuid())
-  userId          String
-  vehicleId       String?
-  locationId      String
-  slotId          String?
-  checkIn         DateTime      @default(now())
+// Transaksi parkir masuk/keluar. QR merujuk ke transactionCode (bukan plat).
+model Transaction {
+  id              String            @id @default(uuid())
+  transactionCode String            @unique // "PARK-00001"
+  areaId          String
+  jukirId         String?
+  checkIn         DateTime          @default(now())
   checkOut        DateTime?
   durationMinutes Int?
-  totalFee        Int?
-  status          SessionStatus @default(ACTIVE)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  amount          Int? // tarif final setelah checkout
+  paymentMethod   PaymentMethod? // diisi saat bayar (CASH / QRIS)
+  paidAt          DateTime?
+  status          TransactionStatus @default(ACTIVE)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  user     User            @relation(fields: [userId], references: [id])
-  vehicle  Vehicle?        @relation(fields: [vehicleId], references: [id])
-  location ParkingLocation @relation(fields: [locationId], references: [id])
-  slot     ParkingSlot?    @relation(fields: [slotId], references: [id])
-  payment  Payment?
+  area   ParkingArea @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  jukir  Jukir?      @relation(fields: [jukirId], references: [id], onDelete: SetNull)
+  User   User?       @relation(fields: [userId], references: [id])
+  userId String?
 }
 
-model Payment {
-  id            String        @id @default(uuid())
-  sessionId     String        @unique
-  userId        String
-  amount        Int
-  paymentMethod String
-  transactionId String?
-  status        PaymentStatus @default(PENDING)
-  paidAt        DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  session ParkingSession @relation(fields: [sessionId], references: [id])
-  user    User           @relation(fields: [userId], references: [id])
+// Aturan MOU / pajak / bagian pengelola (configurable).
+model MouRule {
+  id              String    @id @default(uuid())
+  name            String
+  taxPercent      Float // persentase pajak / bagian pengelola dari revenue
+  operatorPercent Float     @default(0) // opsional: bagian operator/pengelola lain
+  validFrom       DateTime
+  validTo         DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String?
-  type      String
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+// Hasil deteksi Computer Vision per area (bukan per slot).
+model CvDetection {
+  id            String   @id @default(uuid())
+  areaId        String
+  detectedAt    DateTime @default(now())
+  emptyCount    Int      @default(0)
+  occupiedCount Int      @default(0)
+  illegalCount  Int      @default(0)
+  source        String   @default("cctv") // "cctv" | "photo" | "video"
+  createdAt     DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id])
-}
-
-model ParkingEvent {
-  id         String   @id @default(uuid())
-  slotId     String
-  eventType  String
-  detectedAt DateTime @default(now())
-  source     String?
-  confidence Float?
-  metadata   Json?
-
-  slot ParkingSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  area ParkingArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
 }
 
 model Violation {
   id            String          @id @default(uuid())
   photoPath     String // relative path served under /uploads
-  locationId    String?
-  slotCode      String? // best-effort mapped slot (e.g. "A3")
+  areaId        String?
   violationType String          @default("illegal-parking")
   confidence    Float?
+  source        ViolationSource @default(USER)
   reportedById  String?
   reporterRole  Role            @default(USER)
   status        ViolationStatus @default(PENDING)
@@ -195,6 +163,6 @@ model Violation {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  location   ParkingLocation? @relation(fields: [locationId], references: [id])
-  reportedBy User?            @relation(fields: [reportedById], references: [id])
+  area       ParkingArea? @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  reportedBy User?        @relation(fields: [reportedById], references: [id], onDelete: SetNull)
 }
