@@ -4,7 +4,7 @@ import { prisma } from "../prisma.js";
 
 export const usersRouter = Router();
 
-// GET /api/users — list users with their session counts.
+// GET /api/users — list users.
 usersRouter.get("/", async (_req, res, next) => {
   try {
     const users = await prisma.user.findMany({
@@ -16,7 +16,6 @@ usersRouter.get("/", async (_req, res, next) => {
         role: true,
         status: true,
         createdAt: true,
-        _count: { select: { sessions: true, vehicles: true } },
       },
     });
     res.json({ success: true, data: users });

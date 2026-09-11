@@ -8,7 +8,6 @@ interface User {
   role: "ADMIN" | "USER";
   status: "ACTIVE" | "BLOCKED";
   createdAt: string;
-  _count: { sessions: number; vehicles: number };
 }
 
 const th: React.CSSProperties = { textAlign: "left", padding: "8px 10px", borderBottom: "2px solid #e5e7eb", fontSize: 13, color: "#6b7280" };
@@ -49,7 +48,6 @@ export function Users() {
               <th style={th}>Nama</th>
               <th style={th}>Email</th>
               <th style={th}>Role</th>
-              <th style={th}>Sesi</th>
               <th style={th}>Status</th>
               <th style={th}>Aksi</th>
             </tr>
@@ -60,7 +58,6 @@ export function Users() {
                 <td style={td}>{u.name}</td>
                 <td style={td}>{u.email}</td>
                 <td style={td}>{u.role}</td>
-                <td style={td}>{u._count.sessions}</td>
                 <td style={td}>
                   <span className={`badge ${u.status === "ACTIVE" ? "badge-success" : "badge-danger"}`}>
                     {u.status}

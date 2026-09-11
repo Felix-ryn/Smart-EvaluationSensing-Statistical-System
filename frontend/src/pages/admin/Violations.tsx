@@ -5,13 +5,13 @@ import { ViolationForm } from "../ViolationForm";
 interface Violation {
   id: string;
   photoPath: string;
-  slotCode: string | null;
   violationType: string;
   confidence: number | null;
-  status: "PENDING" | "REVIEWED" | "DISMISSED";
+  source: string;
+  status: "PENDING" | "VALID" | "REJECTED";
   reporterRole: string;
   createdAt: string;
-  location?: { name: string } | null;
+  area?: { name: string } | null;
   reportedBy?: { name: string; email: string } | null;
 }
 
@@ -19,7 +19,7 @@ const th: React.CSSProperties = { textAlign: "left", padding: "8px 10px", border
 const td: React.CSSProperties = { padding: "8px 10px", borderBottom: "1px solid #f0f0f0", verticalAlign: "top" };
 
 const badge = (s: Violation["status"]) =>
-  s === "PENDING" ? "badge-warning" : s === "REVIEWED" ? "badge-success" : "badge-danger";
+  s === "PENDING" ? "badge-warning" : s === "VALID" ? "badge-danger" : "badge-success";
 
 export function Violations() {
   const [items, setItems] = useState<Violation[]>([]);
@@ -44,7 +44,7 @@ export function Violations() {
 
   return (
     <div>
-      <div className="page-header">Pelanggaran Parkir</div>
+      <div className="page-header">Pelanggaran Parkir (Illegal Parking)</div>
 
       <div className="card" style={{ marginBottom: 16, maxWidth: 480 }}>
         <h3 style={{ marginTop: 0 }}>Lapor sebagai Admin</h3>
@@ -62,7 +62,8 @@ export function Violations() {
               <tr>
                 <th style={th}>Foto</th>
                 <th style={th}>Jenis</th>
-                <th style={th}>Slot</th>
+                <th style={th}>Area</th>
+                <th style={th}>Sumber</th>
                 <th style={th}>Pelapor</th>
                 <th style={th}>Status</th>
                 <th style={th}>Aksi</th>
@@ -71,7 +72,7 @@ export function Violations() {
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td style={td} colSpan={6}>Belum ada laporan.</td>
+                  <td style={td} colSpan={7}>Belum ada laporan.</td>
                 </tr>
               )}
               {items.map((v) => (
@@ -91,7 +92,8 @@ export function Violations() {
                       <div style={{ color: "#9ca3af", fontSize: 12 }}>{(v.confidence * 100).toFixed(0)}%</div>
                     )}
                   </td>
-                  <td style={td}>{v.slotCode ?? "—"}</td>
+                  <td style={td}>{v.area?.name ?? "—"}</td>
+                  <td style={td}>{v.source}</td>
                   <td style={td}>
                     {v.reportedBy?.name ?? "—"}
                     <div style={{ color: "#9ca3af", fontSize: 12 }}>{v.reporterRole}</div>
@@ -102,8 +104,8 @@ export function Violations() {
                   <td style={td}>
                     {v.status === "PENDING" && (
                       <div style={{ display: "grid", gap: 4 }}>
-                        <button className="btn" onClick={() => setStatus(v.id, "REVIEWED")}>Review</button>
-                        <button className="btn" onClick={() => setStatus(v.id, "DISMISSED")}>Dismiss</button>
+                        <button className="btn" onClick={() => setStatus(v.id, "VALID")}>Valid</button>
+                        <button className="btn" onClick={() => setStatus(v.id, "REJECTED")}>Tolak</button>
                       </div>
                     )}
                   </td>

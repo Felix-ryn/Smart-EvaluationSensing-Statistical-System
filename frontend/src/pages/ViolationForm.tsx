@@ -1,20 +1,33 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 
+interface Area {
+  id: string;
+  name: string;
+}
 interface Result {
   illegalDetected: boolean;
   summary: { empty: number; occupied: number; illegal: number };
   violation: { photoPath: string; violationType: string; confidence: number | null };
 }
 
-/** Upload a photo/video to /api/violations and show the AI result.
- * Shared by the user report page and the admin violations page. */
+/** Upload foto/video ke /api/violations dan tampilkan hasil AI.
+ * Dipakai halaman laporan user dan halaman pelanggaran admin. */
 export function ViolationForm({ onDone }: { onDone?: () => void }) {
   const [file, setFile] = useState<File | null>(null);
-  const [slotCode, setSlotCode] = useState("");
+  const [areaId, setAreaId] = useState("");
+  const [source, setSource] = useState("USER");
+  const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
+
+  useEffect(() => {
+    api.get("/areas").then(({ data }) => {
+      setAreas(data.data);
+      if (data.data[0]) setAreaId(data.data[0].id);
+    });
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,7 +38,8 @@ export function ViolationForm({ onDone }: { onDone?: () => void }) {
     try {
       const form = new FormData();
       form.append("photo", file);
-      if (slotCode) form.append("slotCode", slotCode);
+      if (areaId) form.append("areaId", areaId);
+      form.append("source", source);
       const { data } = await api.post("/violations", form);
       setResult(data.data);
       onDone?.();
@@ -38,13 +52,22 @@ export function ViolationForm({ onDone }: { onDone?: () => void }) {
 
   return (
     <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
+      <select value={areaId} onChange={(e) => setAreaId(e.target.value)}>
+        {areas.map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+      </select>
+      <select value={source} onChange={(e) => setSource(e.target.value)}>
+        <option value="USER">User</option>
+        <option value="JUKIR">Jukir</option>
+        <option value="CCTV">CCTV</option>
+      </select>
       <input
         type="file"
         accept="image/*,video/*"
         capture="environment"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
-      <input placeholder="Slot (opsional, mis. A3)" value={slotCode} onChange={(e) => setSlotCode(e.target.value)} />
       <button className="btn" disabled={!file || loading} type="submit">
         {loading ? "Menganalisis..." : "Kirim & Analisis"}
       </button>

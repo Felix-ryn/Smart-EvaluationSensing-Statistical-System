@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 
 interface Stats {
-  totalUsers: number;
-  totalLocations: number;
-  totalSlots: number;
-  availableSlots: number;
-  activeSessions: number;
+  totalAreas: number;
+  totalJukir: number;
+  activeVehicles: number;
   todayRevenue: number;
+  cashRevenue: number;
+  qrisRevenue: number;
+  pendingViolations: number;
 }
 
 const rupiah = (n: number) => "Rp " + n.toLocaleString("id-ID");
@@ -27,11 +28,13 @@ export function Dashboard() {
   if (!stats) return <p>Loading...</p>;
 
   const cards = [
-    { label: "Total Pengguna", value: stats.totalUsers },
-    { label: "Lokasi Parkir", value: stats.totalLocations },
-    { label: "Slot Tersedia", value: `${stats.availableSlots} / ${stats.totalSlots}` },
-    { label: "Sesi Aktif", value: stats.activeSessions },
+    { label: "Area Parkir", value: stats.totalAreas },
+    { label: "Kendaraan Aktif", value: stats.activeVehicles },
     { label: "Pendapatan Hari Ini", value: rupiah(stats.todayRevenue) },
+    { label: "Pendapatan Cash", value: rupiah(stats.cashRevenue) },
+    { label: "Pendapatan QRIS", value: rupiah(stats.qrisRevenue) },
+    { label: "Jukir", value: stats.totalJukir },
+    { label: "Pelanggaran Pending", value: stats.pendingViolations },
   ];
 
   return (
