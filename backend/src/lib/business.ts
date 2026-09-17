@@ -6,6 +6,7 @@ import { prisma } from "../prisma.js";
 export interface MouSummary {
   taxPercent: number;
   operatorPercent: number;
+  jukirSharePercent: number;
 }
 
 /** Ambil aturan MOU yang sedang berlaku (validFrom <= now <= validTo). */
@@ -20,6 +21,7 @@ export async function getActiveMou(): Promise<MouSummary> {
   return {
     taxPercent: rule?.taxPercent ?? 10,
     operatorPercent: rule?.operatorPercent ?? 0,
+    jukirSharePercent: rule?.jukirSharePercent ?? 15,
   };
 }
 

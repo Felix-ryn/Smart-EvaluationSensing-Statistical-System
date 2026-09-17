@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { env } from "../env.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, type AuthUser } from "../middleware/auth.js";
 
 export const authRouter = Router();
 
@@ -19,7 +19,7 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-function sign(user: { id: string; role: "ADMIN" | "USER" }) {
+function sign(user: Pick<AuthUser, "id" | "role">) {
   return jwt.sign({ id: user.id, role: user.role }, env.jwtSecret, { expiresIn: "7d" });
 }
 

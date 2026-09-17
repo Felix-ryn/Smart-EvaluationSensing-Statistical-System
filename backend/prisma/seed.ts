@@ -7,6 +7,7 @@ const prisma = new PrismaClient();
 // Aturan tarif + MOU untuk seed (bisa diubah lewat UI nanti).
 const RULES: ParkingRules = { firstHour: 2000, nextHour: 1000, maximumDaily: 10000 };
 const TAX_PERCENT = 10; // % pajak / bagian pengelola
+const JUKIR_SHARE_PERCENT = 15; // % bagian juru parkir dari revenue
 
 // Helper tanggal deterministik agar re-seed stabil.
 const now = new Date();
@@ -20,17 +21,46 @@ const daysAgo = (d: number, hour = 9, minute = 0) => {
 async function main() {
   const passwordHash = await bcrypt.hash("password123", 10);
 
-  // ---- Users ----
+  // ---- Users (Admin, Jukir, User) ----
+  
+  // Admin user
   const admin = await prisma.user.upsert({
     where: { email: "admin@sess.local" },
     update: {},
-    create: { name: "Admin", email: "admin@sess.local", passwordHash, role: "ADMIN" },
+    create: { name: "Admin System", email: "admin@sess.local", passwordHash, role: "ADMIN" },
   });
-  const primaryUser = await prisma.user.upsert({
+  
+  // Customer/User pelanggan
+  const customer = await prisma.user.upsert({
     where: { email: "user@sess.local" },
     update: {},
-    create: { name: "User", email: "user@sess.local", passwordHash, role: "USER" },
+    create: { name: "Customer User", email: "user@sess.local", passwordHash, role: "USER" },
   });
+  
+  // Jukir users (changed from separate Jukir model)
+  const jukirSpecs = [
+    { name: "Budi Santoso", areaId: "area-a", email: "jukir.budi@sess.local" },
+    { name: "Siti Rahayu", areaId: "area-a", email: "jukir.siti@sess.local" },
+    { name: "Agus Wijaya", areaId: "area-b", email: "jukir.agus@sess.local" },
+    { name: "Dewi Lestari", areaId: "area-c", email: "jukir.dewi@sess.local" },
+  ];
+  
+  const jukirs: { id: string; name: string; areaId: string }[] = [];
+  for (const j of jukirSpecs) {
+    const jukir = await prisma.user.upsert({
+      where: { email: j.email },
+      update: { areaId: j.areaId, role: "JUKIR" },
+      create: { 
+        name: j.name, 
+        email: j.email, 
+        passwordHash, 
+        role: "JUKIR", 
+        areaId: j.areaId,
+        status: "ACTIVE"
+      },
+    });
+    jukirs.push({ id: jukir.id, name: jukir.name, areaId: jukir.areaId! });
+  }
 
   // ---- MOU rule ----
   await prisma.mouRule.deleteMany();
@@ -39,6 +69,7 @@ async function main() {
       name: "MOU Prototype 2026",
       taxPercent: TAX_PERCENT,
       operatorPercent: 0,
+      jukirSharePercent: JUKIR_SHARE_PERCENT, // New field
       validFrom: daysAgo(30),
       validTo: null,
     },
@@ -58,23 +89,10 @@ async function main() {
     });
   }
 
-  // ---- Jukir ----
-  const jukirSpecs = [
-    { name: "Budi Santoso", areaId: "area-a" },
-    { name: "Siti Rahayu", areaId: "area-a" },
-    { name: "Agus Wijaya", areaId: "area-b" },
-    { name: "Dewi Lestari", areaId: "area-c" },
-  ];
-  const jukirs: { id: string; name: string; areaId: string }[] = [];
-  for (const j of jukirSpecs) {
-    const existing = await prisma.jukir.findFirst({ where: { name: j.name, areaId: j.areaId } });
-    const jukir = existing ?? (await prisma.jukir.create({ data: j }));
-    jukirs.push({ id: jukir.id, name: jukir.name, areaId: jukir.areaId });
-  }
-
   // ---- Reset transaksi & detection agar re-seed bersih ----
   await prisma.transaction.deleteMany();
   await prisma.cvDetection.deleteMany();
+  await prisma.setoranEntry.deleteMany(); // New table
 
   // ---- Transaksi selesai (mendorong revenue chart + cash vs QRIS) ----
   const completedSpecs = [
@@ -135,9 +153,63 @@ async function main() {
       { areaId: "area-c", emptyCount: 15, occupiedCount: 5, illegalCount: 0, source: "cctv" },
     ],
   });
+  
+  // ---- Sample Setoran Entries (auto-calculated) ----
+  await prisma.setoranEntry.create({
+    data: {
+      jukirId: jukirs[0].id,
+      areaId: "area-a",
+      date: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+      totalTransactions: 25,
+      grossAmount: 150000,
+      taxPercent: TAX_PERCENT,
+      taxAmount: 15000,
+      jukirSharePercent: JUKIR_SHARE_PERCENT,
+      jukirShareAmount: 22500,
+      status: "APPROVED",
+      approvedAt: new Date(),
+      approvedBy: admin.id,
+    },
+  });
+  
+  await prisma.setoranEntry.create({
+    data: {
+      jukirId: jukirs[2].id,
+      areaId: "area-b",
+      date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
+      totalTransactions: 18,
+      grossAmount: 95000,
+      taxPercent: TAX_PERCENT,
+      taxAmount: 9500,
+      jukirSharePercent: JUKIR_SHARE_PERCENT,
+      jukirShareAmount: 14250,
+      status: "PENDING",
+    },
+  });
 
   console.log(
-    "Seeded: 2 users (password: password123), 3 area, 4 jukir, 1 MOU, 10 transaksi (7 selesai, 3 aktif), 3 CV detection",
+    `Seeded successfully!
+    
+    Users: ${admin.id} (ADMIN), ${customer.id} (USER), ${jukirs.length} JUKIR
+    - Admin: admin@sess.local | password: password123
+    - User: user@sess.local | password: password123
+    - Jukir accounts created with email: jukir.xxx@sess.local | password: password123
+    
+    Parking Areas: 3
+    Jurik Assigned: ${jukirs.length}
+    MOU Rule: Tax ${TAX_PERCENT}%, Jukir Share ${JUKIR_SHARE_PERCENT}%
+    
+    Transactions: ${counter - 1} total (completed + active)
+    CV Detections: 3 records
+    Sample Setoran: 2 entries
+    
+    Login credentials:
+    - Admin: admin@sess.local / password123
+    - Jukir Budi: jukir.budi@sess.local / password123 (Area A)
+    - Jukir Siti: jukir.siti@sess.local / password123 (Area A)
+    - Jukir Agus: jukir.agus@sess.local / password123 (Area B)
+    - Jukir Dewi: jukir.dewi@sess.local / password123 (Area C)
+    - Customer: user@sess.local / password123`,
   );
 }
 
