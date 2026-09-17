@@ -16,7 +16,11 @@ export function Login() {
     try {
       const { data } = await api.post("/auth/login", { email, password });
       localStorage.setItem("token", data.data.token);
-      nav(data.data.user.role === "ADMIN" ? "/admin/dashboard" : "/user/find-parking");
+      localStorage.setItem("user", JSON.stringify(data.data.user));
+      const role = data.data.user.role;
+      if (role === "ADMIN") nav("/admin/dashboard");
+      else if (role === "JUKIR") nav("/jukir/dashboard");
+      else nav("/user/find-parking");
     } catch (err: any) {
       setError(err.response?.data?.message ?? "Login failed");
     } finally {
@@ -25,14 +29,39 @@ export function Login() {
   }
 
   return (
-    <div style={{ maxWidth: 360, margin: "80px auto", padding: 24 }}>
-      <h1>SESS Login</h1>
-      <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" />
-        <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" type="password" />
-        {error && <div style={{ color: "crimson" }}>{error}</div>}
-        <button disabled={loading} type="submit">{loading ? "..." : "Login"}</button>
-      </form>
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <h1>🅿️ Smart Parking</h1>
+        <p style={{ textAlign: "center", color: "#64748b", fontSize: 13, marginBottom: 20 }}>
+          Masuk ke sistem manajemen parkir
+        </p>
+        <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
+          <div className="form-group">
+            <label>Email</label>
+            <input
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="nama@email.com"
+              type="email"
+            />
+          </div>
+          <div className="form-group">
+            <label>Password</label>
+            <input
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="********"
+              type="password"
+            />
+          </div>
+          {error && <div className="error">{error}</div>}
+          <button className="btn btn-primary w-100" disabled={loading} type="submit">
+            {loading ? "Memproses..." : "Masuk"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

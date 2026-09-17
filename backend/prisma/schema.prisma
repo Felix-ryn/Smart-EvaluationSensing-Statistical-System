@@ -15,6 +15,7 @@ datasource db {
 
 enum Role {
   ADMIN
+  JUKIR
   USER
 }
 
@@ -65,11 +66,19 @@ model User {
   passwordHash String
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
+  
+  // Jukir-specific fields (only populated if role = JUKIR)
+  areaId       String?    // Assigned area for Jukir
+  
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  transactions Transaction[]
-  violations   Violation[]
+  transactionsAsJukir      Transaction[] @relation("TransactionJukir")
+  transactionsAsCustomer   Transaction[] @relation("TransactionCustomer")
+  violations               Violation[]
+  areaJurik                ParkingArea? @relation("AreaJukirs", fields: [areaId], references: [id])
+  setoranEntries           SetoranEntry[] @relation("SetoranJukir")
+  approvedSetoran          SetoranEntry[] @relation("SetoranApprovedBy")
 }
 
 model ParkingArea {
@@ -82,30 +91,23 @@ model ParkingArea {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  jukirs       Jukir[]
+  jukirs       User[]         @relation("AreaJukirs")
   transactions Transaction[]
   detections   CvDetection[]
   violations   Violation[]
+  setoranEntries SetoranEntry[] @relation("SetoranArea")
 }
 
-model Jukir {
-  id        String      @id @default(uuid())
-  name      String
-  areaId    String
-  status    JukirStatus @default(ACTIVE)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
 
-  area         ParkingArea   @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
-}
+// Remove separate Jukir model - Jurik data now stored in User table with role=JUkIr + areaId
+// Jukir fields are: role = 'JUkIR' and assigned areaId through User model
 
 // Transaksi parkir masuk/keluar. QR merujuk ke transactionCode (bukan plat).
 model Transaction {
-  id              String            @id @default(uuid())
-  transactionCode String            @unique // "PARK-00001"
-  areaId          String
-  jukirId         String?
+  id              String            @id @default(uuid()) @db.Uuid
+  transactionCode String            @unique // PARK-00001
+  areaId          String            @db.VarChar(255)
+  jukirId         String?           @db.VarChar(255)
   checkIn         DateTime          @default(now())
   checkOut        DateTime?
   durationMinutes Int?
@@ -116,18 +118,21 @@ model Transaction {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  area   ParkingArea @relation(fields: [areaId], references: [id], onDelete: Restrict)
-  jukir  Jukir?      @relation(fields: [jukirId], references: [id], onDelete: SetNull)
-  User   User?       @relation(fields: [userId], references: [id])
-  userId String?
+  @@map("transaction")
+  
+  area    ParkingArea      @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  jukir   User?            @relation(fields: [jukirId], references: [id], onDelete: SetNull, name: "TransactionJukir")
+  customer User?           @relation(fields: [userId], references: [id], name: "TransactionCustomer")
+  userId  String?          @db.VarChar(255)
 }
 
 // Aturan MOU / pajak / bagian pengelola (configurable).
 model MouRule {
   id              String    @id @default(uuid())
   name            String
-  taxPercent      Float // persentase pajak / bagian pengelola dari revenue
-  operatorPercent Float     @default(0) // opsional: bagian operator/pengelola lain
+  taxPercent      Float // persentase pajak / bagian pengelola dari revenue (%)
+  operatorPercent Float     @default(0) // opsional: bagian operator/pengelola lain (%)
+  jukirSharePercent Float   @default(15) // % bagian juru parkir dari revenue
   validFrom       DateTime
   validTo         DateTime?
   createdAt       DateTime  @default(now())
@@ -146,6 +151,45 @@ model CvDetection {
   createdAt     DateTime @default(now())
 
   area ParkingArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
+}
+
+// Auto-calculated daily setoran/reporting untuk Jukir
+enum SetoranStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model SetoranEntry {
+  id              String         @id @default(uuid())
+  jukirId         String
+  areaId          String
+  date            DateTime       @default(now())
+  
+  totalTransactions Int          @default(0)  // Jumlah transaksi hari ini
+  grossAmount       Int          @default(0)  // Total pendapatan sebelum dipotong
+  
+  taxPercent        Float        @default(0)  // Pajak dari mou rule (%)
+  taxAmount         Int?                      // Pajak pengelola (amount)
+  
+  jukirSharePercent Float        @default(0)  // Persentase juru parkir dari mou rule
+  jukirShareAmount  Int?                      // Amount yang jatuh ke juru parkir
+  
+  status            SetoranStatus @default(PENDING)
+  approvedAt        DateTime?
+  approvedBy        String?  // Admin user ID who approved
+  adminNote         String?
+  
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  jukir          User         @relation("SetoranJukir", fields: [jukirId], references: [id], onDelete: Cascade)
+  area           ParkingArea  @relation("SetoranArea", fields: [areaId], references: [id], onDelete: Cascade)
+  approvedByUser User?        @relation("SetoranApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+  
+  @@index([jukirId, date])
+  @@index([areaId, date])
+  @@index([date])
 }
 
 model Violation {

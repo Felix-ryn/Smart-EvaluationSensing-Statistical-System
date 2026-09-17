@@ -7,3 +7,6 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+// Alias for backward compatibility with new pages
+export const apiClient = api;

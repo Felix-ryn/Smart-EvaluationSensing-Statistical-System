@@ -19,7 +19,7 @@ dashboardRouter.get("/", async (_req, res, next) => {
       pendingViolations,
     ] = await Promise.all([
       prisma.parkingArea.count(),
-      prisma.jukir.count(),
+      prisma.user.count({ where: { role: "JUKIR" } }),
       prisma.transaction.count({ where: { status: "ACTIVE" } }),
       prisma.transaction.aggregate({
         _sum: { amount: true },
