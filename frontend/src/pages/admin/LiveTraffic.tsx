@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Activity, AlertTriangle, Check, Hourglass, Info, MapPin } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 interface LiveTrafficItem {
@@ -72,7 +73,7 @@ export function AdminLiveTraffic() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>🔴 Live Traffic Monitor</h1>
+        <h1><Activity className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Live Traffic Monitor</h1>
         <p>Real-time monitoring aktivitas per area parking</p>
       </header>
 
@@ -90,9 +91,11 @@ export function AdminLiveTraffic() {
               >
                 <div className="area-header">
                   <h2>{area.areaName}</h2>
-                  <span className="status-indicator" style={{ backgroundColor: getOccupancyColor(area.occupancyRate) }}>
-                    ●
-                  </span>
+                  <span
+                    className="status-indicator"
+                    style={{ backgroundColor: getOccupancyColor(area.occupancyRate) }}
+                    aria-hidden="true"
+                  />
                 </div>
 
                 <div className="area-stats">
@@ -124,7 +127,7 @@ export function AdminLiveTraffic() {
                 </div>
 
                 <div className="area-location">
-                  📍 {area.vehicleType === 'motorcycle' ? 'Motor' : 'Mobil'}
+                  <MapPin size={14} strokeWidth={1.8} aria-hidden="true" /> {area.vehicleType === 'motorcycle' ? 'Motor' : 'Mobil'}
                 </div>
               </div>
             ))}
@@ -141,11 +144,13 @@ export function AdminLiveTraffic() {
                   <span className="badge" style={{ 
                     backgroundColor: getOccupancyColor(selectedOccupancy)
                   }}>
-                    {selectedOccupancy >= 80 
-                      ? "⚠️ Hampir Penuh" 
-                      : selectedOccupancy >= 50 
-                        ? "⏳ Normal" 
-                        : "✓ Tersedia"}
+                    {selectedOccupancy >= 80 ? (
+                      <><AlertTriangle size={14} strokeWidth={2} aria-hidden="true" /> Hampir Penuh</>
+                    ) : selectedOccupancy >= 50 ? (
+                      <><Hourglass size={14} strokeWidth={2} aria-hidden="true" /> Normal</>
+                    ) : (
+                      <><Check size={14} strokeWidth={2.4} aria-hidden="true" /> Tersedia</>
+                    )}
                   </span>
                 </div>
 
@@ -166,7 +171,7 @@ export function AdminLiveTraffic() {
 
           {/* Legend */}
           <div className="info-box mt-4">
-            <h3>ℹ️ Legend</h3>
+            <h3><Info className="title-icon" size={16} strokeWidth={1.8} aria-hidden="true" /> Legend</h3>
             <div className="legend-items">
               <div className="legend-item">
                 <div style={{ backgroundColor: "#009B83" }} className="legend-color"></div>

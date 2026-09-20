@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { Banknote, Check, ClipboardList, CreditCard, Smartphone } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 interface Transaction {
@@ -98,14 +99,14 @@ export function JukirPayment() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>💵 Pembayaran</h1>
+        <h1><Banknote className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Pembayaran</h1>
         <p>Proses pembayaran pelanggan</p>
       </header>
 
       <div className="grid grid-2">
         {/* Left Column - Transaction Details */}
         <div className="card">
-          <h2>📋 Detail Transaksi</h2>
+          <h2><ClipboardList className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Detail Transaksi</h2>
           
           <div className="detail-item">
             <label>ID Transaksi</label>
@@ -142,20 +143,20 @@ export function JukirPayment() {
 
         {/* Right Column - Payment Options */}
         <div className="card">
-          <h2>💳 Metode Pembayaran</h2>
+          <h2><CreditCard className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Metode Pembayaran</h2>
           
           <div className="payment-methods">
             <button
               className={`payment-option ${paymentMethod === "CASH" ? "active" : ""}`}
               onClick={() => setPaymentMethod("CASH")}
             >
-              <div className="payment-icon">💵</div>
+              <div className="payment-icon"><Banknote size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="payment-info">
                 <span className="payment-title">Tunai (Cash)</span>
                 <span className="payment-desc">Bayar dengan uang tunai</span>
               </div>
               {paymentMethod === "CASH" && (
-                <div className="checkmark">✓</div>
+                <div className="checkmark"><Check size={16} strokeWidth={2.4} aria-hidden="true" /></div>
               )}
             </button>
 
@@ -163,13 +164,13 @@ export function JukirPayment() {
               className={`payment-option ${paymentMethod === "QRIS" ? "active" : ""}`}
               onClick={() => setPaymentMethod("QRIS")}
             >
-              <div className="payment-icon">📱</div>
+              <div className="payment-icon"><Smartphone size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="payment-info">
                 <span className="payment-title">QRIS</span>
                 <span className="payment-desc">Scan QR Code atau bayar via app</span>
               </div>
               {paymentMethod === "QRIS" && (
-                <div className="checkmark">✓</div>
+                <div className="checkmark"><Check size={16} strokeWidth={2.4} aria-hidden="true" /></div>
               )}
             </button>
           </div>

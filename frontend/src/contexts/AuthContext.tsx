@@ -18,7 +18,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -51,24 +51,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    try {
-      const response = await apiClient.post("/auth/login", {
-        email,
-        password,
-      });
-      
-      if (response.data.success && response.data.user) {
-        const userData = response.data.user;
-        setUser(userData);
-        localStorage.setItem("user", JSON.stringify(userData));
-        localStorage.setItem("token", response.data.token);
-      } else {
-        throw new Error(response.data.message || "Login failed");
-      }
-    } catch (error) {
-      console.error("Login error:", error);
-      throw error;
+    const response = await apiClient.post("/auth/login", { email, password });
+
+    // Backend shape: { success, data: { token, user } }
+    const { token, user: userData } = response.data?.data ?? {};
+    if (!response.data?.success || !userData || !token) {
+      throw new Error(response.data?.message || "Login gagal");
     }
+
+    localStorage.setItem("token", token);
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
+    return userData as User;
   };
 
   const logout = () => {

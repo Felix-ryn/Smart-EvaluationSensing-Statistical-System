@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { CreditCard, Plus } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 interface Transaction {
@@ -89,7 +90,7 @@ export function JukirTransactions() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>💳 Transaksi Parkir</h1>
+        <h1><CreditCard className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Transaksi Parkir</h1>
         <p>Kelola transaksi parkir yang masuk dan keluar</p>
       </header>
 
@@ -125,7 +126,7 @@ export function JukirTransactions() {
                 alert("Fitur transaksi baru akan segera hadir");
               }}
             >
-              ➕ Transaksi Baru
+              <Plus size={16} strokeWidth={2} aria-hidden="true" /> Transaksi Baru
             </button>
           </div>
         </div>

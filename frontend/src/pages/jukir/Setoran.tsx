@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { BarChart3, Calendar, Check, ClipboardList, Hourglass, Printer, Upload, Wallet, X } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 interface SetoranData {
@@ -55,11 +56,11 @@ export function JukirSetoran() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "APPROVED":
-        return <span className="badge badge-success">✓ Approved</span>;
+        return <span className="badge badge-success"><Check size={14} strokeWidth={2.4} aria-hidden="true" /> Approved</span>;
       case "REJECTED":
-        return <span className="badge badge-danger">✗ Rejected</span>;
+        return <span className="badge badge-danger"><X size={14} strokeWidth={2.4} aria-hidden="true" /> Rejected</span>;
       default:
-        return <span className="badge badge-warning">⏳ Pending</span>;
+        return <span className="badge badge-warning"><Hourglass size={14} strokeWidth={2} aria-hidden="true" /> Pending</span>;
     }
   };
 
@@ -70,7 +71,7 @@ export function JukirSetoran() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>💰 Pajak & Setoran Jurik</h1>
+        <h1><Wallet className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Pajak &amp; Setoran Jukir</h1>
         <p>Rincian setoran auto-calculated untuk hari ini</p>
       </header>
 
@@ -78,7 +79,7 @@ export function JukirSetoran() {
       <div className="grid grid-2">
         {/* Left Column - Daily Summary */}
         <div className="card">
-          <h2>📅 Setoran Hari Ini</h2>
+          <h2><Calendar className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Setoran Hari Ini</h2>
           {setoranData ? (
             <div className="setoran-summary">
               <div className="summary-item">
@@ -146,7 +147,7 @@ export function JukirSetoran() {
 
         {/* Right Column - Breakdown */}
         <div className="card">
-          <h2>📊 Rincian Per Jenis Kendaraan</h2>
+          <h2><BarChart3 className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Rincian Per Jenis Kendaraan</h2>
           <div className="breakdown-list">
             <div className="breakdown-item">
               <div className="breakdown-header">
@@ -182,14 +183,14 @@ export function JukirSetoran() {
               className="btn btn-primary w-100"
               onClick={() => alert("Fitur submit setoran akan segera hadir")}
             >
-              📤 Submit Setoran
+              <Upload size={16} strokeWidth={2} aria-hidden="true" /> Submit Setoran
             </button>
             
             <button 
               className="btn btn-outline w-100 mt-3"
               onClick={() => window.print()}
             >
-              🖨️ Export PDF
+              <Printer size={16} strokeWidth={2} aria-hidden="true" /> Export PDF
             </button>
           </div>
         </div>
@@ -197,7 +198,7 @@ export function JukirSetoran() {
 
       {/* History Section */}
       <div className="card mt-6">
-        <h2>📋 Riwayat Setoran</h2>
+        <h2><ClipboardList className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Riwayat Setoran</h2>
         <table className="table table-striped">
           <thead>
             <tr>
