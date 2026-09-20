@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { BarChart3, Banknote, Check, Hourglass, Wallet, X } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 interface SetoranEntry {
@@ -72,11 +73,11 @@ export function AdminPajakSetoran() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "APPROVED":
-        return <span className="badge badge-success">✓ Approved</span>;
+        return <span className="badge badge-success"><Check size={14} strokeWidth={2.4} aria-hidden="true" /> Approved</span>;
       case "REJECTED":
-        return <span className="badge badge-danger">✗ Rejected</span>;
+        return <span className="badge badge-danger"><X size={14} strokeWidth={2.4} aria-hidden="true" /> Rejected</span>;
       default:
-        return <span className="badge badge-warning">⏳ Pending</span>;
+        return <span className="badge badge-warning"><Hourglass size={14} strokeWidth={2} aria-hidden="true" /> Pending</span>;
     }
   };
 
@@ -94,14 +95,14 @@ export function AdminPajakSetoran() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>💰 Pajak & Setoran Jurik</h1>
-        <p>Kelola pajak pengelola dan setoran jurik parkir</p>
+        <h1><Wallet className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Pajak &amp; Setoran Jukir</h1>
+        <p>Kelola pajak pengelola dan setoran jukir parkir</p>
       </header>
 
       {/* Summary Cards */}
       <div className="grid grid-kpi">
         <div className="card card-stat">
-          <div className="icon-container icon-info">📊</div>
+          <div className="icon-container icon-info"><BarChart3 size={20} strokeWidth={1.8} aria-hidden="true" /></div>
           <div className="stat-content">
             <span className="stat-label">Total Transactions Today</span>
             <span className="stat-value">
@@ -111,7 +112,7 @@ export function AdminPajakSetoran() {
         </div>
 
         <div className="card card-stat">
-          <div className="icon-container icon-success">💵</div>
+          <div className="icon-container icon-success"><Banknote size={20} strokeWidth={1.8} aria-hidden="true" /></div>
           <div className="stat-content">
             <span className="stat-label">Gross Revenue Today</span>
             <span className="stat-value">
@@ -121,7 +122,7 @@ export function AdminPajakSetoran() {
         </div>
 
         <div className="card card-stat">
-          <div className="icon-container icon-warning">⏳</div>
+          <div className="icon-container icon-warning"><Hourglass size={20} strokeWidth={1.8} aria-hidden="true" /></div>
           <div className="stat-content">
             <span className="stat-label">Pending Approval</span>
             <span className="stat-value">{setoranList.filter(s => s.status === "PENDING").length}</span>
@@ -207,13 +208,13 @@ export function AdminPajakSetoran() {
                             className="btn btn-sm btn-success"
                             onClick={() => handleApprove(entry.id, "APPROVED")}
                           >
-                            ✓ Approve
+                            <Check size={14} strokeWidth={2.4} aria-hidden="true" /> Approve
                           </button>
                           <button 
                             className="btn btn-sm btn-outline"
                             onClick={() => handleApprove(entry.id, "REJECTED")}
                           >
-                            ✗ Reject
+                            <X size={14} strokeWidth={2.4} aria-hidden="true" /> Reject
                           </button>
                         </>
                       )}

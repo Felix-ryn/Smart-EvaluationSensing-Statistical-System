@@ -1,4 +1,22 @@
 import { NavLink, Outlet } from "react-router-dom";
+import {
+  Activity,
+  AlertTriangle,
+  Banknote,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  type LucideIcon,
+  ParkingSquare,
+  Coins,
+  QrCode,
+  Scale,
+  Search,
+  Settings,
+  TrendingUp,
+  Users2,
+} from "lucide-react";
 import { useAuth, type User } from "./contexts/AuthContext";
 
 // ================================================
@@ -6,31 +24,31 @@ import { useAuth, type User } from "./contexts/AuthContext";
 // ================================================
 const menuConfig = {
   ADMIN: [
-    { to: "/admin/dashboard", label: "Dashboard", icon: "📊" },
-    { to: "/admin/live-traffic", label: "Live Traffic", icon: "🔴" },
-    { to: "/admin/areas", label: "Area Parkir", icon: "🅿️" },
-    { to: "/admin/transactions", label: "Transaksi", icon: "💳" },
-    { to: "/admin/violations", label: "Pelanggaran", icon: "⚠️" },
-    { to: "/admin/kapasitas", label: "Kapasitas", icon: "📈" },
-    { to: "/admin/reports", label: "Laporan", icon: "📑" },
-    { to: "/admin/pajak-setoran", label: "Pajak & Setoran", icon: "💰" },
-    { to: "/admin/reconciliation", label: "Rekonsiliasi", icon: "⚖️" },
-    { to: "/admin/users", label: "Users & Jurik", icon: "👥" },
-    { to: "/admin/settings", label: "Pengaturan", icon: "⚙️" },
+    { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { to: "/admin/live-traffic", label: "Live Traffic", icon: Activity },
+    { to: "/admin/areas", label: "Area Parkir", icon: ParkingSquare },
+    { to: "/admin/transactions", label: "Transaksi", icon: CreditCard },
+    { to: "/admin/violations", label: "Pelanggaran", icon: AlertTriangle },
+    { to: "/admin/kapasitas", label: "Kapasitas", icon: TrendingUp },
+    { to: "/admin/reports", label: "Laporan", icon: FileText },
+    { to: "/admin/pajak-setoran", label: "Pajak & Setoran", icon: Coins },
+    { to: "/admin/reconciliation", label: "Rekonsiliasi", icon: Scale },
+    { to: "/admin/users", label: "Users & Jukir", icon: Users2 },
+    { to: "/admin/settings", label: "Pengaturan", icon: Settings },
   ],
   JUKIR: [
-    { to: "/jukir/dashboard", label: "Dashboard", icon: "🏠" },
-    { to: "/jukir/transactions", label: "Transaksi Parkir", icon: "💳" },
-    { to: "/jukir/payment", label: "Pembayaran", icon: "💵" },
-    { to: "/jukir/violations", label: "Pelanggaran", icon: "⚠️" },
-    { to: "/jukir/setoran", label: "Setoran", icon: "💰" },
-    { to: "/jukir/qris", label: "QRIS", icon: "📱" },
-    { to: "/jukir/traffic", label: "Traffic Area", icon: "🔴" },
+    { to: "/jukir/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { to: "/jukir/transactions", label: "Transaksi Parkir", icon: CreditCard },
+    { to: "/jukir/payment", label: "Pembayaran", icon: Banknote },
+    { to: "/jukir/violations", label: "Pelanggaran", icon: AlertTriangle },
+    { to: "/jukir/setoran", label: "Setoran", icon: Coins },
+    { to: "/jukir/qris", label: "QRIS", icon: QrCode },
+    { to: "/jukir/traffic", label: "Traffic Area", icon: Activity },
   ],
   USER: [
-    { to: "/user/find-parking", label: "Cari Parkir", icon: "🔍" },
-    { to: "/user/my-transactions", label: "Transaksi Saya", icon: "💳" },
-    { to: "/user/report-violation", label: "Lapor Pelanggaran", icon: "⚠️" },
+    { to: "/user/find-parking", label: "Cari Parkir", icon: Search },
+    { to: "/user/my-transactions", label: "Transaksi Saya", icon: CreditCard },
+    { to: "/user/report-violation", label: "Lapor Pelanggaran", icon: AlertTriangle },
   ],
 };
 
@@ -46,14 +64,15 @@ const roleBadge: Record<User["role"], string> = {
 interface MenuItem {
   to: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
 }
 
 function SidebarItem({ item }: { item: MenuItem }) {
+  const Icon = item.icon;
   return (
     <li className="menu-item">
-      <NavLink to={item.to} className={({ isActive }) => (isActive ? "active" : "")}>
-        <span className="menu-icon">{item.icon}</span>
+      <NavLink to={item.to} className={({ isActive }) => (isActive ? "active" : "")} title={item.label}>
+        <Icon className="menu-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
         <span className="menu-text">{item.label}</span>
       </NavLink>
     </li>
@@ -62,17 +81,15 @@ function SidebarItem({ item }: { item: MenuItem }) {
 
 interface SidebarProps {
   brand: string;
-  brandIcon: string;
   menuItems: MenuItem[];
-  footerLink?: { to: string; label: string };
   onLogout?: () => void;
 }
 
-function Sidebar({ brand, brandIcon, menuItems, footerLink, onLogout }: SidebarProps) {
+function Sidebar({ brand, menuItems, onLogout }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <span className="brand-icon">{brandIcon}</span>
+        <img src="/logo.png" alt="" className="brand-logo" />
         <span className="brand-text">{brand}</span>
       </div>
 
@@ -86,18 +103,11 @@ function Sidebar({ brand, brandIcon, menuItems, footerLink, onLogout }: SidebarP
 
       <div className="sidebar-footer">
         <ul className="footer-menu">
-          {footerLink && (
-            <li className="menu-item">
-              <NavLink to={footerLink.to} className={({ isActive }) => (isActive ? "active" : "")}>
-                <span className="menu-text">{footerLink.label}</span>
-              </NavLink>
-            </li>
-          )}
           {onLogout && (
             <li className="menu-item">
-              <button type="button" className="logout-btn" onClick={onLogout}>
-                <span className="menu-icon">🚪</span>
-                <span className="menu-text">Logout</span>
+              <button type="button" className="logout-btn" onClick={onLogout} title="Keluar">
+                <LogOut className="menu-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
+                <span className="menu-text">Keluar</span>
               </button>
             </li>
           )}
@@ -110,11 +120,12 @@ function Sidebar({ brand, brandIcon, menuItems, footerLink, onLogout }: SidebarP
 // ================================================
 // Header Component
 // ================================================
-function Header({ user, onLogout }: { user: User; onLogout: () => void }) {
+function Header({ title, user, onLogout }: { title: string; user: User; onLogout: () => void }) {
   return (
     <header className="app-header">
       <div className="header-left">
-        <h1 className="page-title">Smart Street Parking</h1>
+        <h1 className="page-title">{title}</h1>
+        <span className="page-subtitle">Selamat datang, {user.name}</span>
       </div>
       <div className="header-right">
         <div className="header-user">
@@ -137,25 +148,18 @@ function Header({ user, onLogout }: { user: User; onLogout: () => void }) {
 // ================================================
 interface LayoutProps {
   brand: string;
-  brandIcon: string;
+  title: string;
   menuItems: MenuItem[];
-  footerLink?: { to: string; label: string };
 }
 
-function Layout({ brand, brandIcon, menuItems, footerLink }: LayoutProps) {
+function Layout({ brand, title, menuItems }: LayoutProps) {
   const { user, logout } = useAuth();
 
   return (
     <div className="lms-app">
-      {user && <Header user={user} onLogout={logout} />}
+      <Sidebar brand={brand} menuItems={menuItems} onLogout={logout} />
+      {user && <Header title={title} user={user} onLogout={logout} />}
       <div className="lms-container">
-        <Sidebar
-          brand={brand}
-          brandIcon={brandIcon}
-          menuItems={menuItems}
-          footerLink={footerLink}
-          onLogout={logout}
-        />
         <main className="main-content">
           <Outlet />
         </main>
@@ -170,10 +174,9 @@ function Layout({ brand, brandIcon, menuItems, footerLink }: LayoutProps) {
 export function AdminLayout() {
   return (
     <Layout
-      brand="Admin Dashboard"
-      brandIcon="🏢"
+      brand="Smart Street Parking"
+      title="Admin Dashboard"
       menuItems={menuConfig.ADMIN}
-      footerLink={{ to: "/user/find-parking", label: "→ User View" }}
     />
   );
 }
@@ -181,8 +184,8 @@ export function AdminLayout() {
 export function JukirLayout() {
   return (
     <Layout
-      brand="Panel Juru Parkir"
-      brandIcon="👨‍💼"
+      brand="Smart Street Parking"
+      title="Panel Juru Parkir"
       menuItems={menuConfig.JUKIR}
     />
   );
@@ -191,10 +194,9 @@ export function JukirLayout() {
 export function UserLayout() {
   return (
     <Layout
-      brand="Smart Parking"
-      brandIcon="🅿️"
+      brand="Smart Street Parking"
+      title="Smart Parking"
       menuItems={menuConfig.USER}
-      footerLink={{ to: "/admin/dashboard", label: "→ Admin View" }}
     />
   );
 }

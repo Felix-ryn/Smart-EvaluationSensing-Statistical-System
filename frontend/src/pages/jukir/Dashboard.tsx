@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { Activity, BarChart3, Banknote, ClipboardList, Hourglass, LayoutDashboard, Plus, Wallet } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 interface DashboardStats {
@@ -33,7 +34,7 @@ export function JukirDashboard() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>🏠 Dashboard Jurik</h1>
+        <h1><LayoutDashboard className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Dashboard Jukir</h1>
         <p>Hari ini - {new Date().toLocaleDateString("id-ID", { 
           weekday: "long", 
           year: "numeric", 
@@ -49,7 +50,7 @@ export function JukirDashboard() {
           {/* KPI Cards */}
           <div className="grid grid-kpi">
             <div className="card card-stat">
-              <div className="icon-container icon-info">📊</div>
+              <div className="icon-container icon-info"><BarChart3 size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="stat-content">
                 <span className="stat-label">Transaksi Hari Ini</span>
                 <span className="stat-value">{stats?.todayTransactions || 0}</span>
@@ -57,7 +58,7 @@ export function JukirDashboard() {
             </div>
 
             <div className="card card-stat">
-              <div className="icon-container icon-warning">⏳</div>
+              <div className="icon-container icon-warning"><Hourglass size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="stat-content">
                 <span className="stat-label">Transaksi Aktif</span>
                 <span className="stat-value">{stats?.activeTransactions || 0}</span>
@@ -65,7 +66,7 @@ export function JukirDashboard() {
             </div>
 
             <div className="card card-stat">
-              <div className="icon-container icon-success">💰</div>
+              <div className="icon-container icon-success"><Wallet size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="stat-content">
                 <span className="stat-label">Pendapatan Hari Ini</span>
                 <span className="stat-value">Rp {(stats?.totalRevenue || 0).toLocaleString("id-ID")}</span>
@@ -78,13 +79,13 @@ export function JukirDashboard() {
             <h2>Aksi Cepat</h2>
             <div className="quick-actions">
               <button className="btn btn-primary" onClick={() => navigate("/jukir/transactions")}>
-                ➕ Transaksi Baru
+                <Plus size={16} strokeWidth={2} aria-hidden="true" /> Transaksi Baru
               </button>
               <button className="btn btn-secondary" onClick={() => navigate("/jukir/payment")}>
-                💵 Pembayaran
+                <Banknote size={16} strokeWidth={2} aria-hidden="true" /> Pembayaran
               </button>
               <button className="btn btn-outline" onClick={() => navigate("/jukir/setoran")}>
-                📋 Setoran Saya
+                <ClipboardList size={16} strokeWidth={2} aria-hidden="true" /> Setoran Saya
               </button>
             </div>
           </div>
@@ -97,7 +98,7 @@ export function JukirDashboard() {
               className="btn btn-outline mt-4" 
               onClick={() => navigate("/jukir/traffic")}
             >
-              🔴 Live Traffic Area
+              <Activity size={16} strokeWidth={2} aria-hidden="true" /> Live Traffic Area
             </button>
           </div>
         </>

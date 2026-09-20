@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Activity, AlertTriangle, CheckCircle2, Clock, FileText, Hourglass, ParkingSquare } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 export function JukirTraffic() {
@@ -43,14 +44,14 @@ export function JukirTraffic() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>🔴 Live Traffic - Area {trafficData.areaName}</h1>
+        <h1><Activity className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Live Traffic - Area {trafficData.areaName}</h1>
         <p>Monitoring real-time traffic area yang Anda tangani</p>
       </header>
 
       {/* Overview Cards */}
       <div className="grid grid-kpi">
         <div className="card card-stat">
-          <div className="icon-container icon-info">🅿️</div>
+          <div className="icon-container icon-info"><ParkingSquare size={20} strokeWidth={1.8} aria-hidden="true" /></div>
           <div className="stat-content">
             <span className="stat-label">Kapasitas Total</span>
             <span className="stat-value">{trafficData.capacity}</span>
@@ -58,7 +59,7 @@ export function JukirTraffic() {
         </div>
 
         <div className="card card-stat">
-          <div className="icon-container icon-warning">⏳</div>
+          <div className="icon-container icon-warning"><Hourglass size={20} strokeWidth={1.8} aria-hidden="true" /></div>
           <div className="stat-content">
             <span className="stat-label">Terisi</span>
             <span className="stat-value">{trafficData.currentOccupancy}</span>
@@ -66,7 +67,7 @@ export function JukirTraffic() {
         </div>
 
         <div className="card card-stat">
-          <div className="icon-container icon-success">✓</div>
+          <div className="icon-container icon-success"><CheckCircle2 size={20} strokeWidth={1.8} aria-hidden="true" /></div>
           <div className="stat-content">
             <span className="stat-label">Tersedia</span>
             <span className="stat-value">{trafficData.emptySlots}</span>
@@ -104,7 +105,7 @@ export function JukirTraffic() {
 
             {isFull && (
               <div className="alert alert-danger">
-                ⚠️ Area hampir penuh! Kapasitas mencapai {occupancyRate}%
+                <AlertTriangle size={16} strokeWidth={2} aria-hidden="true" /> Area hampir penuh! Kapasitas mencapai {occupancyRate}%
               </div>
             )}
           </div>
@@ -135,7 +136,13 @@ export function JukirTraffic() {
                 {trafficData.recentActivity.slice(0, 10).map((activity: any, idx: number) => (
                   <div key={idx} className="activity-item">
                     <div className="activity-icon">
-                      {activity.status === "ACTIVE" ? "⏱️" : activity.checkOut ? "✅" : "📝"}
+                      {activity.status === "ACTIVE" ? (
+                        <Clock size={16} strokeWidth={1.8} aria-hidden="true" />
+                      ) : activity.checkOut ? (
+                        <CheckCircle2 size={16} strokeWidth={1.8} aria-hidden="true" />
+                      ) : (
+                        <FileText size={16} strokeWidth={1.8} aria-hidden="true" />
+                      )}
                     </div>
                     <div className="activity-content">
                       <div className="activity-title">

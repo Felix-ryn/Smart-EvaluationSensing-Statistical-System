@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Info } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../../api/client";
 
@@ -26,11 +27,40 @@ interface Settlement {
 
 const rupiah = (n: number) => "Rp " + n.toLocaleString("id-ID");
 
+// ponytail: dummy fallback supaya chart tetap tampil saat backend/data belum ada.
+// Upgrade: hapus blok ini setelah endpoint /reports terisi data nyata.
+const DUMMY_REVENUE: RevenuePoint[] = [
+  { date: "09-12", cash: 420000, qris: 180000, total: 600000 },
+  { date: "09-13", cash: 510000, qris: 240000, total: 750000 },
+  { date: "09-14", cash: 385000, qris: 295000, total: 680000 },
+  { date: "09-15", cash: 600000, qris: 310000, total: 910000 },
+  { date: "09-16", cash: 470000, qris: 260000, total: 730000 },
+  { date: "09-17", cash: 540000, qris: 350000, total: 890000 },
+  { date: "09-18", cash: 480000, qris: 320000, total: 800000 },
+];
+
+const DUMMY_SUMMARY: Summary = {
+  totalRevenue: 5360000,
+  totalTransactions: 742,
+  activeTransactions: 38,
+  cashRevenue: 3405000,
+  qrisRevenue: 1955000,
+};
+
+const DUMMY_SETTLEMENT: Settlement = {
+  taxPercent: 30,
+  totalRevenue: 5360000,
+  cash: 3405000,
+  qris: 1955000,
+  taxAmount: 1608000,
+  settlementFromCash: 1797000,
+};
+
 export function Reports() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [revenue, setRevenue] = useState<RevenuePoint[]>([]);
   const [settlement, setSettlement] = useState<Settlement | null>(null);
-  const [error, setError] = useState("");
+  const [isDummy, setIsDummy] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -39,14 +69,23 @@ export function Reports() {
       api.get("/reports/jukir-settlement"),
     ])
       .then(([s, r, j]) => {
-        setSummary(s.data.data);
-        setRevenue(r.data.data.map((p: RevenuePoint) => ({ ...p, date: p.date.slice(5) })));
-        setSettlement(j.data.data);
+        const points: RevenuePoint[] = (r.data.data ?? []).map((p: RevenuePoint) => ({
+          ...p,
+          date: p.date.slice(5),
+        }));
+        setSummary(s.data.data ?? DUMMY_SUMMARY);
+        setSettlement(j.data.data ?? DUMMY_SETTLEMENT);
+        setRevenue(points.length ? points : DUMMY_REVENUE);
+        setIsDummy(points.length === 0);
       })
-      .catch((err) => setError(err.response?.data?.message ?? "Gagal memuat"));
+      .catch(() => {
+        setSummary(DUMMY_SUMMARY);
+        setSettlement(DUMMY_SETTLEMENT);
+        setRevenue(DUMMY_REVENUE);
+        setIsDummy(true);
+      });
   }, []);
 
-  if (error) return <p style={{ color: "crimson" }}>{error}</p>;
   if (!summary || !settlement) return <p>Loading...</p>;
 
   const cards = [
@@ -59,7 +98,12 @@ export function Reports() {
 
   return (
     <div>
-      <div className="page-header">Laporan & Setoran Jukir</div>
+      <div className="page-header">Laporan &amp; Setoran Jukir</div>
+      {isDummy && (
+        <div className="alert alert-danger" style={{ marginBottom: 16 }}>
+          <Info size={16} strokeWidth={2} aria-hidden="true" /> Menampilkan data contoh. Data laporan belum tersedia dari server.
+        </div>
+      )}
       <div className="grid" style={{ marginBottom: 16 }}>
         {cards.map((c) => (
           <div key={c.label} className="card stat">
@@ -73,13 +117,13 @@ export function Reports() {
         <h3 style={{ marginTop: 0 }}>Pendapatan 7 Hari (Cash vs QRIS)</h3>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={revenue}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" />
             <XAxis dataKey="date" />
             <YAxis tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : `${v}`)} />
             <Tooltip formatter={(v) => rupiah(Number(v))} />
             <Legend />
-            <Bar dataKey="cash" fill="#16a34a" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="qris" fill="#2563eb" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="cash" fill="#19B79A" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="qris" fill="#3187C7" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

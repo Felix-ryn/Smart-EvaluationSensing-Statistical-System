@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AlertTriangle, Check, ClipboardList, FileText, Upload } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 export function JukirViolations() {
@@ -71,7 +72,7 @@ export function JukirViolations() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>⚠️ Upload Pelanggaran</h1>
+        <h1><AlertTriangle className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Upload Pelanggaran</h1>
         <p>Laporkan pelanggaran parkir dengan foto bukti</p>
       </header>
 
@@ -82,7 +83,7 @@ export function JukirViolations() {
           
           {uploaded && (
             <div className="alert alert-success mb-4">
-              ✓ Pelaporan berhasil dikirim!
+              <Check size={16} strokeWidth={2.4} aria-hidden="true" /> Pelaporan berhasil dikirim!
             </div>
           )}
 
@@ -145,7 +146,7 @@ export function JukirViolations() {
               
               {file && (
                 <div className="file-info mt-3">
-                  📄 {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                  <FileText size={14} strokeWidth={1.8} aria-hidden="true" /> {file.name} ({(file.size / 1024).toFixed(1)} KB)
                 </div>
               )}
             </div>
@@ -156,7 +157,7 @@ export function JukirViolations() {
                 className="btn btn-primary w-100"
                 disabled={loading || !file || !formData.areaId}
               >
-                {loading ? "Mengupload..." : "📤 Submit Pelanggaran"}
+                {loading ? "Mengupload..." : <><Upload size={16} strokeWidth={2} aria-hidden="true" /> Submit Pelanggaran</>}
               </button>
             </div>
           </form>
@@ -164,7 +165,7 @@ export function JukirViolations() {
 
         {/* Right Column - Instructions & Recent */}
         <div className="card">
-          <h2>📋 Instruksi Pengumpulan</h2>
+          <h2><ClipboardList className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Instruksi Pengumpulan</h2>
           
           <div className="instruction-list">
             <div className="instruction-item">

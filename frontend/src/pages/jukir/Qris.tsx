@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { Check, Hourglass, Info, Printer, QrCode, Smartphone } from "lucide-react";
 import { apiClient } from "../../api/client";
 
 export function JukirQris() {
@@ -68,14 +69,14 @@ export function JukirQris() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>📱 Transaksi QRIS</h1>
+        <h1><Smartphone className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Transaksi QRIS</h1>
         <p>Generate & monitor pembayaran via QRIS</p>
       </header>
 
       <div className="grid grid-2">
         {/* Left Column - Generate QR */}
         <div className="card">
-          <h2>🏭 Generate QR Code</h2>
+          <h2><QrCode className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Generate QR Code</h2>
           
           <div className="form-section">
             <label>Pilih Transaksi</label>
@@ -143,7 +144,7 @@ export function JukirQris() {
 
               <div className="actions mt-4">
                 <button className="btn btn-success w-100" onClick={handlePrintQR}>
-                  🖨️ Print QR Code
+                  <Printer size={16} strokeWidth={2} aria-hidden="true" /> Print QR Code
                 </button>
                 <button 
                   className="btn btn-outline w-100 mt-3"
@@ -158,7 +159,7 @@ export function JukirQris() {
 
         {/* Right Column - Check Payment Status */}
         <div className="card">
-          <h2>✓ Cek Status Pembayaran</h2>
+          <h2><Check className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Cek Status Pembayaran</h2>
           
           <div className="form-section">
             <label>ID Transaksi</label>
@@ -182,7 +183,11 @@ export function JukirQris() {
           {qrisStatus && (
             <div className="status-display mt-6">
               <div className={`status-badge ${qrisStatus.isPaid ? "badge-success" : "badge-warning"}`}>
-                {qrisStatus.isPaid ? "✓ PAID" : "⏳ Pending"}
+                {qrisStatus.isPaid ? (
+                  <><Check size={14} strokeWidth={2.4} aria-hidden="true" /> PAID</>
+                ) : (
+                  <><Hourglass size={14} strokeWidth={2} aria-hidden="true" /> Pending</>
+                )}
               </div>
 
               <div className="status-details">
@@ -222,7 +227,7 @@ export function JukirQris() {
           )}
 
           <div className="info-box mt-6">
-            <h3>ℹ️ Info QRIS</h3>
+            <h3><Info className="title-icon" size={16} strokeWidth={1.8} aria-hidden="true" /> Info QRIS</h3>
             <ul>
               <li>QR Code valid selama 30 menit</li>
               <li>Pelanggan bisa scan dengan e-wallet/bank app</li>
