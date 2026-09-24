@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { ParkingMap } from "../components/ParkingMap";
 
 interface Area {
   id: string;
@@ -10,6 +11,8 @@ interface Area {
   capacity: number;
   available: number;
   activeVehicles: number;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export function FindParking() {
@@ -31,6 +34,11 @@ export function FindParking() {
   return (
     <div>
       <h1>Find Parking</h1>
+      {areas.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <ParkingMap areas={areas} />
+        </div>
+      )}
       {areas.length === 0 && <p>Belum ada area parkir tersedia.</p>}
       <div style={{ display: "grid", gap: 12 }}>
         {areas.map((a) => (

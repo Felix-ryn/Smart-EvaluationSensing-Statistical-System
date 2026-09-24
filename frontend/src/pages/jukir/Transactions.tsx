@@ -2,12 +2,15 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { CreditCard, Plus } from "lucide-react";
 import { apiClient } from "../../api/client";
+import { useAuth } from "../../contexts/AuthContext";
 
 interface Transaction {
   id: string;
   transactionCode: string;
   areaId: string;
   jukirId?: string | null;
+  vehicleType?: string | null;
+  plateNumber?: string | null;
   checkIn: Date;
   checkOut?: Date | null;
   durationMinutes?: number | null;
@@ -18,11 +21,18 @@ interface Transaction {
   area: { name: string };
 }
 
+const vehicleLabel = (t?: string | null) => (t === "car" ? "Mobil" : t === "motorcycle" ? "Motor" : "-");
+
 export function JukirTransactions() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filterStatus, setFilterStatus] = useState<"ALL" | "ACTIVE" | "COMPLETED">("ALL");
+  const [showForm, setShowForm] = useState(false);
+  const [vehicleType, setVehicleType] = useState<"motorcycle" | "car">("motorcycle");
+  const [plateNumber, setPlateNumber] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
@@ -60,6 +70,40 @@ export function JukirTransactions() {
 
   const handlePayment = (transactionId: string) => {
     navigate(`/jukir/payment?tx=${transactionId}`);
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.areaId) {
+      alert("Akun Anda belum ditugaskan ke area parkir. Hubungi admin.");
+      return;
+    }
+    const plate = plateNumber.trim().toUpperCase();
+    if (!plate) {
+      alert("Plat nomor wajib diisi");
+      return;
+    }
+    setCreating(true);
+    try {
+      const response = await apiClient.post("/transactions", {
+        areaId: user.areaId,
+        vehicleType,
+        plateNumber: plate,
+      });
+      if (response.data.success) {
+        setShowForm(false);
+        setPlateNumber("");
+        setVehicleType("motorcycle");
+        fetchTransactions();
+      } else {
+        throw new Error(response.data.message || "Gagal membuat transaksi");
+      }
+    } catch (error) {
+      console.error("Create transaction error:", error);
+      alert("Gagal membuat transaksi baru");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const filteredTransactions = transactions.filter(tx => {
@@ -119,12 +163,9 @@ export function JukirTransactions() {
           </div>
 
           <div className="actions">
-            <button 
-              className="btn btn-primary" 
-              onClick={() => {
-                // In real app, open modal for new transaction
-                alert("Fitur transaksi baru akan segera hadir");
-              }}
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowForm((v) => !v)}
             >
               <Plus size={16} strokeWidth={2} aria-hidden="true" /> Transaksi Baru
             </button>
@@ -132,12 +173,66 @@ export function JukirTransactions() {
         </div>
       </div>
 
+      {/* New Transaction Form */}
+      {showForm && (
+        <div className="card mb-4">
+          <h2><Plus size={18} strokeWidth={1.8} aria-hidden="true" /> Transaksi Baru</h2>
+          <form onSubmit={handleCreate}>
+            <div className="grid grid-2">
+              <div className="form-group">
+                <label htmlFor="vehicleType">Jenis Kendaraan</label>
+                <select
+                  id="vehicleType"
+                  className="input"
+                  value={vehicleType}
+                  onChange={(e) => setVehicleType(e.target.value as "motorcycle" | "car")}
+                >
+                  <option value="motorcycle">Motor</option>
+                  <option value="car">Mobil</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="plateNumber">Plat Nomor</label>
+                <input
+                  id="plateNumber"
+                  type="text"
+                  className="input"
+                  value={plateNumber}
+                  onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
+                  placeholder="B 1234 XYZ"
+                  maxLength={15}
+                  required
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="actions">
+              <button type="submit" className="btn btn-primary" disabled={creating}>
+                {creating ? "Menyimpan..." : "Simpan"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setShowForm(false)}
+                disabled={creating}
+              >
+                Batal
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Transactions Table */}
       <div className="card">
         <table className="table">
           <thead>
             <tr>
               <th>ID Transaksi</th>
+              <th>Kendaraan</th>
+              <th>Plat</th>
               <th>Area</th>
               <th>Masuk</th>
               <th>Keluar</th>
@@ -150,16 +245,18 @@ export function JukirTransactions() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} className="text-center">Loading...</td>
+                <td colSpan={10} className="text-center">Loading...</td>
               </tr>
             ) : filteredTransactions.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-muted">Tidak ada data transaksi</td>
+                <td colSpan={10} className="text-center text-muted">Tidak ada data transaksi</td>
               </tr>
             ) : (
               filteredTransactions.map((tx) => (
                 <tr key={tx.id}>
                   <td className="font-semibold">{tx.transactionCode}</td>
+                  <td>{vehicleLabel(tx.vehicleType)}</td>
+                  <td>{tx.plateNumber || "-"}</td>
                   <td>{tx.area.name}</td>
                   <td>{formatTime(new Date(tx.checkIn))}</td>
                   <td>

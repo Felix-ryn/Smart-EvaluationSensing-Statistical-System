@@ -6,10 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY requirements.txt .
-# Install torch+torchvision from the same CPU index for version compatibility,
-# then install the rest (ultralytics pins its own compatible range).
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir -r requirements.txt
+# Pin a compatible torch/torchvision CPU pair so ultralytics can't swap torch
+# to a mismatched build (cause of "torchvision::nms does not exist").
+RUN pip install --no-cache-dir -r requirements.txt \
+      torch==2.2.2 torchvision==0.17.2 \
+      --extra-index-url https://download.pytorch.org/whl/cpu
 
 COPY main.py .
 

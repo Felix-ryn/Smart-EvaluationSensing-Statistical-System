@@ -1,18 +1,30 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Banknote, Check, ClipboardList, CreditCard, Smartphone } from "lucide-react";
+import { Banknote, Check, ClipboardList, CreditCard, QrCode, Smartphone } from "lucide-react";
 import { apiClient } from "../../api/client";
+
+interface QrData {
+  transactionCode: string;
+  amount: number;
+  merchantId: string;
+  qrCodeUrl: string;
+  expiresAt: string;
+}
 
 interface Transaction {
   id: string;
   transactionCode: string;
   areaId: string;
+  vehicleType?: string | null;
+  plateNumber?: string | null;
   checkIn: Date;
   checkOut?: Date | null;
   durationMinutes?: number;
   amount?: number;
   area: { name: string };
 }
+
+const vehicleLabel = (t?: string | null) => (t === "car" ? "Mobil" : t === "motorcycle" ? "Motor" : "-");
 
 export function JukirPayment() {
   const [searchParams] = useSearchParams();
@@ -23,6 +35,8 @@ export function JukirPayment() {
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "QRIS">("CASH");
   const [processing, setProcessing] = useState(false);
+  const [qr, setQr] = useState<QrData | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
 
   useEffect(() => {
     if (!txId) {
@@ -45,9 +59,39 @@ export function JukirPayment() {
     }
   };
 
+  const selectMethod = (method: "CASH" | "QRIS") => {
+    setPaymentMethod(method);
+    if (method === "QRIS" && !qr && transaction) generateQr();
+  };
+
+  const generateQr = async () => {
+    if (!transaction) return;
+    setQrLoading(true);
+    try {
+      const response = await apiClient.post("/jukir/qris/generate", {
+        transactionId: transaction.id,
+      });
+      if (response.data.success) {
+        setQr(response.data.data);
+      } else {
+        throw new Error(response.data.message || "Gagal generate QR");
+      }
+    } catch (error) {
+      console.error("QR generate error:", error);
+      alert("Gagal generate QR Code");
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
   const handlePayment = async () => {
     if (!transaction) return;
-    
+
+    if (paymentMethod === "QRIS" && !qr) {
+      alert("Generate QR Code terlebih dahulu");
+      return;
+    }
+
     if (!confirm(`Konfirmasi pembayaran ${paymentMethod} untuk ${transaction.transactionCode}?`)) {
       return;
     }
@@ -120,6 +164,18 @@ export function JukirPayment() {
 
           <div className="detail-row">
             <div className="detail-item">
+              <label>Jenis Kendaraan</label>
+              <span>{vehicleLabel(transaction.vehicleType)}</span>
+            </div>
+
+            <div className="detail-item">
+              <label>Plat Nomor</label>
+              <span className="font-semibold">{transaction.plateNumber || "-"}</span>
+            </div>
+          </div>
+
+          <div className="detail-row">
+            <div className="detail-item">
               <label>Waktu Masuk</label>
               <span>{formatTime(new Date(transaction.checkIn))}</span>
             </div>
@@ -148,7 +204,7 @@ export function JukirPayment() {
           <div className="payment-methods">
             <button
               className={`payment-option ${paymentMethod === "CASH" ? "active" : ""}`}
-              onClick={() => setPaymentMethod("CASH")}
+              onClick={() => selectMethod("CASH")}
             >
               <div className="payment-icon"><Banknote size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="payment-info">
@@ -162,7 +218,7 @@ export function JukirPayment() {
 
             <button
               className={`payment-option ${paymentMethod === "QRIS" ? "active" : ""}`}
-              onClick={() => setPaymentMethod("QRIS")}
+              onClick={() => selectMethod("QRIS")}
             >
               <div className="payment-icon"><Smartphone size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="payment-info">
@@ -174,6 +230,27 @@ export function JukirPayment() {
               )}
             </button>
           </div>
+
+          {paymentMethod === "QRIS" && (
+            <div className="qr-display mt-4">
+              {qrLoading && <p>Membuat QR Code...</p>}
+              {!qrLoading && qr && (
+                <div className="qr-container">
+                  <div className="qr-code-large">
+                    <img src={qr.qrCodeUrl} alt={`QR Code ${qr.transactionCode}`} width={220} height={220} />
+                  </div>
+                  <div className="qr-info">
+                    <div className="info-row"><strong>ID Transaksi:</strong><span>{qr.transactionCode}</span></div>
+                    <div className="info-row"><strong>Merchant:</strong><span>{qr.merchantId}</span></div>
+                    <div className="info-row"><strong>Kadaluarsa:</strong><span>{new Date(qr.expiresAt).toLocaleTimeString("id-ID")}</span></div>
+                  </div>
+                  <p className="qr-hint">
+                    <QrCode size={14} strokeWidth={1.8} aria-hidden="true" /> Minta pelanggan scan QR, lalu klik Selesaikan Transaksi.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="payment-summary">
             <div className="summary-row">
