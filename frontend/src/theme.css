@@ -875,3 +875,10 @@ textarea.input::placeholder {
 
   .table-wrap { overflow-x: auto; }
 }
+
+/* QR code display (Payment & QRIS pages) */
+.qr-container { display: grid; justify-items: center; gap: 12px; }
+.qr-code-large img { border: 1px solid var(--border, #DCE9EC); border-radius: 12px; padding: 8px; background: #fff; }
+.qr-info { width: 100%; display: grid; gap: 6px; }
+.qr-info .info-row { display: flex; justify-content: space-between; font-size: 13px; }
+.qr-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-500, #718994); }

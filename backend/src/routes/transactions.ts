@@ -13,6 +13,8 @@ const DEFAULT_RULES: ParkingRules = { firstHour: 2000, nextHour: 1000, maximumDa
 const checkInSchema = z.object({
   areaId: z.string().min(1),
   jukirId: z.string().optional(),
+  vehicleType: z.enum(["motorcycle", "car"]).default("motorcycle"),
+  plateNumber: z.string().trim().min(1).max(15).optional(),
 });
 
 const paySchema = z.object({
@@ -33,7 +35,7 @@ async function nextCode(): Promise<string> {
 // Accessible by ADMIN and JUkir only
 transactionsRouter.post("/", requireAuth, async (req, res, next) => {
   try {
-    const { areaId, jukirId } = checkInSchema.parse(req.body);
+    const { areaId, jukirId, vehicleType, plateNumber } = checkInSchema.parse(req.body);
     const area = await prisma.parkingArea.findUnique({ where: { id: areaId } });
     if (!area) {
       return res.status(404).json({ success: false, message: "Area tidak ditemukan", code: "NOT_FOUND" });
@@ -50,7 +52,13 @@ transactionsRouter.post("/", requireAuth, async (req, res, next) => {
     
     const transactionCode = await nextCode();
     const tx = await prisma.transaction.create({
-      data: { transactionCode, areaId, jukirId: jukirId ?? null },
+      data: {
+        transactionCode,
+        areaId,
+        jukirId: jukirId ?? null,
+        vehicleType,
+        plateNumber: plateNumber ? plateNumber.toUpperCase() : null,
+      },
     });
     res.status(201).json({ success: true, data: tx });
   } catch (e) {

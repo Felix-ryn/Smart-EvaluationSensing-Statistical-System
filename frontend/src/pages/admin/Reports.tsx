@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Info } from "lucide-react";
+import { Banknote, FileBarChart, Hourglass, Info, QrCode, Receipt, Wallet } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../../api/client";
 
@@ -86,35 +86,50 @@ export function Reports() {
       });
   }, []);
 
-  if (!summary || !settlement) return <p>Loading...</p>;
-
-  const cards = [
-    { label: "Total Pendapatan", value: rupiah(summary.totalRevenue) },
-    { label: "Pendapatan Cash", value: rupiah(summary.cashRevenue) },
-    { label: "Pendapatan QRIS", value: rupiah(summary.qrisRevenue) },
-    { label: "Total Transaksi", value: summary.totalTransactions },
-    { label: "Transaksi Aktif", value: summary.activeTransactions },
+  const cards = summary && [
+    { label: "Total Pendapatan", value: rupiah(summary.totalRevenue), icon: Wallet, tone: "icon-success" },
+    { label: "Pendapatan Cash", value: rupiah(summary.cashRevenue), icon: Banknote, tone: "icon-success" },
+    { label: "Pendapatan QRIS", value: rupiah(summary.qrisRevenue), icon: QrCode, tone: "icon-info" },
+    { label: "Total Transaksi", value: summary.totalTransactions, icon: Receipt, tone: "icon-info" },
+    { label: "Transaksi Aktif", value: summary.activeTransactions, icon: Hourglass, tone: "icon-warning" },
   ];
 
   return (
-    <div>
-      <div className="page-header">Laporan &amp; Setoran Jukir</div>
+    <div className="page">
+      <header className="page-header">
+        <h1><FileBarChart className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Laporan &amp; Setoran Jukir</h1>
+        <p>Hari ini - {new Date().toLocaleDateString("id-ID", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })}</p>
+      </header>
+
       {isDummy && (
-        <div className="alert alert-danger" style={{ marginBottom: 16 }}>
+        <div className="alert alert-danger">
           <Info size={16} strokeWidth={2} aria-hidden="true" /> Menampilkan data contoh. Data laporan belum tersedia dari server.
         </div>
       )}
-      <div className="grid" style={{ marginBottom: 16 }}>
-        {cards.map((c) => (
-          <div key={c.label} className="card stat">
-            <div className="label">{c.label}</div>
-            <div className="value">{c.value}</div>
+
+      {!summary || !settlement ? (
+        <div className="loading">Memuat data...</div>
+      ) : (
+        <>
+      <div className="grid grid-kpi">
+        {(cards || []).map(({ label, value, icon: Icon, tone }) => (
+          <div key={label} className="card card-stat">
+            <div className={`icon-container ${tone}`}><Icon size={20} strokeWidth={1.8} aria-hidden="true" /></div>
+            <div className="stat-content">
+              <span className="stat-label">{label}</span>
+              <span className="stat-value">{value}</span>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Pendapatan 7 Hari (Cash vs QRIS)</h3>
+      <div className="card">
+        <h2>Pendapatan 7 Hari (Cash vs QRIS)</h2>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={revenue}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" />
@@ -129,22 +144,24 @@ export function Reports() {
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Setoran Jukir (MOU: {settlement.taxPercent}% pajak)</h3>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <tbody>
-            <tr><td style={td}>Total Revenue</td><td style={td}><strong>{rupiah(settlement.totalRevenue)}</strong></td></tr>
-            <tr><td style={td}>Cash</td><td style={td}>{rupiah(settlement.cash)}</td></tr>
-            <tr><td style={td}>QRIS</td><td style={td}>{rupiah(settlement.qris)}</td></tr>
-            <tr><td style={td}>Kewajiban Pajak ({settlement.taxPercent}%)</td><td style={td}>{rupiah(settlement.taxAmount)}</td></tr>
-            <tr>
-              <td style={td}>Sisa Disetor dari Cash</td>
-              <td style={td}><strong>{rupiah(settlement.settlementFromCash)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
+        <h2>Setoran Jukir (MOU: {settlement.taxPercent}% pajak)</h2>
+        <div className="table-wrap">
+          <table className="table">
+            <tbody>
+              <tr><td>Total Revenue</td><td><strong>{rupiah(settlement.totalRevenue)}</strong></td></tr>
+              <tr><td>Cash</td><td>{rupiah(settlement.cash)}</td></tr>
+              <tr><td>QRIS</td><td>{rupiah(settlement.qris)}</td></tr>
+              <tr><td>Kewajiban Pajak ({settlement.taxPercent}%)</td><td>{rupiah(settlement.taxAmount)}</td></tr>
+              <tr>
+                <td>Sisa Disetor dari Cash</td>
+                <td><strong>{rupiah(settlement.settlementFromCash)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
-
-const td: React.CSSProperties = { padding: "8px 10px", borderBottom: "1px solid #f0f0f0" };

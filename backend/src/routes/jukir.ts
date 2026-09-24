@@ -382,14 +382,17 @@ jukirRouter.post("/qris/generate", requireJukirOrAdmin, async (req, res, next) =
       });
     }
     
-    // TODO: Integrate dengan payment gateway QRIS provider
-    // For now, return mock QR data
+    // ponytail: QR mock — payload QRIS-style + gambar via api.qrserver.com.
+    // Belum terhubung payment gateway asli; upgrade ke Midtrans/Xendit saat butuh bayar nyata.
+    const merchantId = "SMARTPARKING001";
+    const qrString = `QRIS|${merchantId}|${transaction.transactionCode}|${transaction.amount}`;
     const qrData = {
       transactionId,
       transactionCode: transaction.transactionCode,
       amount: transaction.amount,
-      merchantId: "SMARTPARKING001",
-      qrCodeUrl: `/api/qris/mock/${transaction.id}`, // Placeholder
+      merchantId,
+      qrString,
+      qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrString)}`,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 menit
     };
     

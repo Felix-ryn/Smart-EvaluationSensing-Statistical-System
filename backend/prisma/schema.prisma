@@ -85,6 +85,8 @@ model ParkingArea {
   id          String     @id @default(uuid())
   name        String
   location    String // alamat / nama jalan area parkir
+  latitude    Float? // koordinat untuk peta
+  longitude   Float?
   vehicleType String     @default("motorcycle") // "motorcycle" | "car"
   capacity    Int // kapasitas ditentukan admin berdasarkan lapangan
   status      AreaStatus @default(ACTIVE)
@@ -108,6 +110,8 @@ model Transaction {
   transactionCode String            @unique // PARK-00001
   areaId          String            @db.VarChar(255)
   jukirId         String?           @db.VarChar(255)
+  vehicleType     String            @default("motorcycle") // "motorcycle" | "car"
+  plateNumber     String?           // plat nomor kendaraan (opsional)
   checkIn         DateTime          @default(now())
   checkOut        DateTime?
   durationMinutes Int?

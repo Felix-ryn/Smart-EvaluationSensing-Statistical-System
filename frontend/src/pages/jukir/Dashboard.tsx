@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Activity, BarChart3, Banknote, ClipboardList, Hourglass, LayoutDashboard, Plus, Wallet } from "lucide-react";
 import { apiClient } from "../../api/client";
+import { useAuth } from "../../contexts/AuthContext";
+import { ParkingMap, type MapArea } from "../../components/ParkingMap";
 
 interface DashboardStats {
   todayTransactions: number;
@@ -11,12 +13,25 @@ interface DashboardStats {
 
 export function JukirDashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [myArea, setMyArea] = useState<MapArea | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  useEffect(() => {
+    if (!user?.areaId) return;
+    apiClient
+      .get("/areas")
+      .then(({ data }) => {
+        const area = (data.data as MapArea[]).find((a) => a.id === user.areaId);
+        setMyArea(area ?? null);
+      })
+      .catch(() => {});
+  }, [user?.areaId]);
 
   const fetchDashboardData = async () => {
     try {
@@ -81,7 +96,7 @@ export function JukirDashboard() {
               <button className="btn btn-primary" onClick={() => navigate("/jukir/transactions")}>
                 <Plus size={16} strokeWidth={2} aria-hidden="true" /> Transaksi Baru
               </button>
-              <button className="btn btn-secondary" onClick={() => navigate("/jukir/payment")}>
+              <button className="btn btn-secondary" onClick={() => navigate("/jukir/transactions")}>
                 <Banknote size={16} strokeWidth={2} aria-hidden="true" /> Pembayaran
               </button>
               <button className="btn btn-outline" onClick={() => navigate("/jukir/setoran")}>
@@ -93,9 +108,14 @@ export function JukirDashboard() {
           {/* My Area Info */}
           <div className="card">
             <h2>Area Saya</h2>
-            <p className="text-muted">Lihat traffic area yang Anda tanggung</p>
-            <button 
-              className="btn btn-outline mt-4" 
+            <p className="text-muted">Lihat lokasi & traffic area yang Anda tanggung</p>
+            {myArea ? (
+              <ParkingMap areas={[myArea]} height={320} zoom={15} />
+            ) : (
+              <p className="text-muted mt-3">Lokasi area belum tersedia.</p>
+            )}
+            <button
+              className="btn btn-outline mt-4"
               onClick={() => navigate("/jukir/traffic")}
             >
               <Activity size={16} strokeWidth={2} aria-hidden="true" /> Live Traffic Area
