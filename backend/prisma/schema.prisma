@@ -203,6 +203,7 @@ model Violation {
   violationType String          @default("illegal-parking")
   confidence    Float?
   source        ViolationSource @default(USER)
+  note          String? // catatan opsional dari pelapor (jukir/user)
   reportedById  String?
   reporterRole  Role            @default(USER)
   status        ViolationStatus @default(PENDING)

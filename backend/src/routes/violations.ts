@@ -23,6 +23,7 @@ violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res,
     const source = (["USER", "JUKIR", "CCTV"] as const).includes(req.body.source)
       ? (req.body.source as "USER" | "JUKIR" | "CCTV")
       : "USER";
+    const note = typeof req.body.note === "string" && req.body.note.trim() ? req.body.note.trim() : null;
 
     const result = await detectFile(req.file.path, req.file.mimetype);
     const illegal = pickIllegal(result.detections);
@@ -34,6 +35,7 @@ violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res,
         violationType: illegal ? "illegal-parking" : "none",
         confidence: illegal?.confidence ?? null,
         source,
+        note,
         reportedById: req.user!.id,
         reporterRole: req.user!.role,
         detections: result as object,

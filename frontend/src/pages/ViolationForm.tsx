@@ -13,10 +13,17 @@ interface Result {
 
 /** Upload foto/video ke /api/violations dan tampilkan hasil AI.
  * Dipakai halaman laporan user dan halaman pelanggaran admin. */
-export function ViolationForm({ onDone }: { onDone?: () => void }) {
+export function ViolationForm({
+  onDone,
+  defaultSource = "USER",
+}: {
+  onDone?: () => void;
+  defaultSource?: "USER" | "JUKIR" | "CCTV";
+}) {
   const [file, setFile] = useState<File | null>(null);
   const [areaId, setAreaId] = useState("");
-  const [source, setSource] = useState("USER");
+  const [source, setSource] = useState(defaultSource);
+  const [note, setNote] = useState("");
   const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +47,7 @@ export function ViolationForm({ onDone }: { onDone?: () => void }) {
       form.append("photo", file);
       if (areaId) form.append("areaId", areaId);
       form.append("source", source);
+      if (note.trim()) form.append("note", note.trim());
       const { data } = await api.post("/violations", form);
       setResult(data.data);
       onDone?.();
@@ -57,7 +65,7 @@ export function ViolationForm({ onDone }: { onDone?: () => void }) {
           <option key={a.id} value={a.id}>{a.name}</option>
         ))}
       </select>
-      <select value={source} onChange={(e) => setSource(e.target.value)}>
+      <select value={source} onChange={(e) => setSource(e.target.value as typeof source)}>
         <option value="USER">User</option>
         <option value="JUKIR">Jukir</option>
         <option value="CCTV">CCTV</option>
@@ -67,6 +75,13 @@ export function ViolationForm({ onDone }: { onDone?: () => void }) {
         accept="image/*,video/*"
         capture="environment"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+      />
+      <textarea
+        rows={3}
+        placeholder="Keterangan (opsional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        style={{ resize: "vertical" }}
       />
       <button className="btn" disabled={!file || loading} type="submit">
         {loading ? "Menganalisis..." : "Kirim & Analisis"}

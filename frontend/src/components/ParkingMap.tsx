@@ -29,10 +29,10 @@ interface ParkingMapProps {
   height?: number;
 }
 
-// Fallback: pusat kota Jakarta bila tak ada koordinat area.
-const DEFAULT_CENTER: [number, number] = [-6.2088, 106.8256];
+// Fallback: pusat kota Surabaya bila tak ada koordinat area.
+const DEFAULT_CENTER: [number, number] = [-7.2512, 112.7553];
 
-export function ParkingMap({ areas, center, zoom = 13, height = 360 }: ParkingMapProps) {
+export function ParkingMap({ areas, center, zoom = 17, height = 360 }: ParkingMapProps) {
   const located = areas.filter(
     (a): a is MapArea & { latitude: number; longitude: number } =>
       a.latitude != null && a.longitude != null,
