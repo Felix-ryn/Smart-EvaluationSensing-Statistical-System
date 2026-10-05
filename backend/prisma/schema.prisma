@@ -59,6 +59,11 @@ enum ViolationSource {
   CCTV
 }
 
+enum Shift {
+  PAGI
+  SORE
+}
+
 model User {
   id           String     @id @default(uuid())
   name         String
@@ -79,6 +84,8 @@ model User {
   areaJurik                ParkingArea? @relation("AreaJukirs", fields: [areaId], references: [id])
   setoranEntries           SetoranEntry[] @relation("SetoranJukir")
   approvedSetoran          SetoranEntry[] @relation("SetoranApprovedBy")
+  attendances              Attendance[] @relation("AttendanceJukir")
+  clusterAssignments       JukirCluster[] @relation("JukirClusterAssignment")
 }
 
 model ParkingArea {
@@ -130,13 +137,24 @@ model Transaction {
   userId  String?          @db.VarChar(255)
 }
 
-// Aturan MOU / pajak / bagian pengelola (configurable).
+// Aturan MOU / pajak / bagian pengelola + tarif parkir (configurable).
 model MouRule {
   id              String    @id @default(uuid())
   name            String
   taxPercent      Float // persentase pajak / bagian pengelola dari revenue (%)
   operatorPercent Float     @default(0) // opsional: bagian operator/pengelola lain (%)
   jukirSharePercent Float   @default(15) // % bagian juru parkir dari revenue
+  
+  // === PARKING RATES FOR MOTORCYCLE ===
+  firstHour_motorcycle       Int       @default(2000)   // Rp 2.000 - jam pertama motor
+  nextHour_motorcycle        Int       @default(1000)   // Rp 1.000 - jam berikutnya motor
+  maximumDaily_motorcycle    Int       @default(10000)  // Rp 10.000 - max per hari motor
+  
+  // === PARKING RATES FOR CAR ===
+  firstHour_car             Int       @default(3000)    // Rp 3.000 - jam pertama mobil
+  nextHour_car              Int       @default(1500)    // Rp 1.500 - jam berikutnya mobil
+  maximumDaily_car          Int       @default(15000)   // Rp 15.000 - max per hari mobil
+  
   validFrom       DateTime
   validTo         DateTime?
   createdAt       DateTime  @default(now())
@@ -194,6 +212,75 @@ model SetoranEntry {
   @@index([jukirId, date])
   @@index([areaId, date])
   @@index([date])
+}
+
+// Kehadiran jukir - untuk tracking jam kerja dan ketepatan waktu
+model Attendance {
+  id           String   @id @default(uuid())
+  jukirId      String
+  date         DateTime @db.Date
+  shift        Shift    // PAGI (07:00) or SORE (13:00)
+  
+  // Jadwal masuk tetap (07:00 atau 13:00)
+  jadwalMasuk  String   // "07:00" or "13:00"
+  
+  // Realisasi waktu datang (jadwal ± 45 menit)
+  jamDatang    DateTime
+  
+  // Waktu pulang (4-8 jam setelah jamDatang)
+  jamPulang    DateTime
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  jukir        User     @relation("AttendanceJukir", fields: [jukirId], references: [id], onDelete: Cascade)
+  
+  @@unique([jukirId, date])
+  @@index([jukirId, date])
+  @@index([date])
+}
+
+// Hasil GMM clustering - cluster assignment per jukir
+model JukirCluster {
+  id                 String   @id @default(uuid())
+  jukirId            String
+  
+  // Hasil clustering
+  clusterLabel       Int      // 0, 1, 2, ... (cluster assignment)
+  gmmProbability     Float    // Confidence score (0-1)
+  
+  // Metrics yang digunakan untuk clustering
+  dailyEarnings      Float    // Rp juta per hari (average)
+  workConsistency    Float    // Std dev jam kerja harian
+  punctualityPercent Float    // On-time percentage (0-100)
+  
+  // Analysis window
+  analyzedFrom       DateTime @db.Date
+  analyzedTo         DateTime @db.Date
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  jukir              User     @relation("JukirClusterAssignment", fields: [jukirId], references: [id], onDelete: Cascade)
+  
+  @@unique([jukirId, analyzedTo])
+  @@index([clusterLabel, analyzedTo])
+}
+
+// Forecast validation & accuracy tracking
+model ForecastValidation {
+  id                   String   @id @default(uuid())
+  forecastMonth        DateTime @db.Date    // Month when forecast was run
+  actualRevenue        BigInt?              // Actual revenue for the period
+  forecastedRevenue    BigInt               // Forecasted revenue
+  mapePercent          Float?               // Mean Absolute Percentage Error
+  modelAccuracy        String?              // GOOD/ACCEPTABLE/POOR
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([forecastMonth])
+  @@index([createdAt])
 }
 
 model Violation {

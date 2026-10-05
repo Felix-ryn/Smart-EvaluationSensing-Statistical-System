@@ -2,13 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { calculateParkingFee, type ParkingRules } from "../lib/fee.js";
-import { getActiveMou } from "../lib/business.js";
+import { calculateParkingFee } from "../lib/fee.js";
+import { getActiveMou, mouToParkingRules } from "../lib/business.js";
 
 export const transactionsRouter = Router();
-
-// Aturan tarif default (bisa diganti nanti lewat config/MOU bila perlu).
-const DEFAULT_RULES: ParkingRules = { firstHour: 2000, nextHour: 1000, maximumDaily: 10000 };
 
 const checkInSchema = z.object({
   areaId: z.string().min(1),
@@ -139,8 +136,13 @@ transactionsRouter.post("/:id/checkout", requireAuth, async (req, res, next) => 
       });
     }
     
+    // NEW: Fetch active MouRule (includes tarif by vehicle type)
+    const mou = await getActiveMou();
+    const vehicleType = (tx.vehicleType as "motorcycle" | "car") || "motorcycle";
+    const rules = mouToParkingRules(mou, vehicleType);
+    
     const checkOut = new Date();
-    const fee = calculateParkingFee(tx.checkIn, checkOut, DEFAULT_RULES);
+    const fee = calculateParkingFee(tx.checkIn, checkOut, rules);
     const updated = await prisma.transaction.update({
       where: { id: tx.id },
       data: { checkOut, durationMinutes: fee.durationMinutes, amount: fee.totalFee },

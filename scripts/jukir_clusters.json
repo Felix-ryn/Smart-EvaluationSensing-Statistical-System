@@ -1,0 +1,59 @@
+{
+  "analyzed_date": "2026-10-05",
+  "analysis_window_days": 90,
+  "optimal_clusters": 3,
+  "bic_scores": {
+    "2": -41.81826371777052,
+    "3": -73.29615906924391
+  },
+  "jukir_assignments": [
+    {
+      "id": "3eaf3a89-7a22-48a7-8e26-9cac62fd2c5c",
+      "name": "Agus Wijaya",
+      "cluster": 0,
+      "confidence": 1.0,
+      "daily_earnings": 7000.0,
+      "work_consistency": 1.0960461210857833,
+      "punctuality_percent": 100.0,
+      "attendance_days": 53,
+      "total_earnings": 371000.0,
+      "performance_label": "Perlu Pendampingan (Needs Support)"
+    },
+    {
+      "id": "43d874b1-01f7-4a4d-bf63-69fb55fe78fc",
+      "name": "Siti Rahayu",
+      "cluster": 0,
+      "confidence": 1.0,
+      "daily_earnings": 7000.0,
+      "work_consistency": 1.080868110492341,
+      "punctuality_percent": 100.0,
+      "attendance_days": 49,
+      "total_earnings": 343000.0,
+      "performance_label": "Perlu Pendampingan (Needs Support)"
+    },
+    {
+      "id": "64c3c6b3-7e76-461c-922a-95eb1bd36e53",
+      "name": "Dewi Lestari",
+      "cluster": 2,
+      "confidence": 1.0,
+      "daily_earnings": 3000.0,
+      "work_consistency": 1.14084417111169,
+      "punctuality_percent": 71.42857142857143,
+      "attendance_days": 49,
+      "total_earnings": 147000.0,
+      "performance_label": "Perlu Pendampingan (Needs Support)"
+    },
+    {
+      "id": "ee4bc529-59b9-4211-9fdb-7fac169426f7",
+      "name": "Budi Santoso",
+      "cluster": 1,
+      "confidence": 1.0,
+      "daily_earnings": 9000.0,
+      "work_consistency": 1.2152654176548288,
+      "punctuality_percent": 100.0,
+      "attendance_days": 55,
+      "total_earnings": 495000.0,
+      "performance_label": "Perlu Pendampingan (Needs Support)"
+    }
+  ]
+}

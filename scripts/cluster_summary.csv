@@ -1,0 +1,6 @@
+,daily_earnings,daily_earnings,daily_earnings,daily_earnings,daily_earnings,work_consistency,work_consistency,punctuality_percent,punctuality_percent,attendance_days
+,count,mean,std,min,max,mean,std,mean,std,mean
+cluster,,,,,,,,,,
+0,2,7000.0,0.0,7000.0,7000.0,1.09,0.01,100.0,0.0,51.0
+1,1,9000.0,,9000.0,9000.0,1.22,,100.0,,55.0
+2,1,3000.0,,3000.0,3000.0,1.14,,71.43,,49.0

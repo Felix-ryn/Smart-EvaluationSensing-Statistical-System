@@ -4,6 +4,7 @@ import { Activity, BarChart3, Banknote, ClipboardList, Hourglass, LayoutDashboar
 import { apiClient } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { ParkingMap, type MapArea } from "../../components/ParkingMap";
+import { JukirPerformance } from "../../components/analytics/JukirPerformance";
 
 interface DashboardStats {
   todayTransactions: number;
@@ -123,6 +124,9 @@ export function JukirDashboard() {
           </div>
         </>
       )}
+
+      {/* Segmentasi kinerja dari hasil GMM: posisi saya + perbandingan seluruh jukir. */}
+      <JukirPerformance />
     </div>
   );
 }
