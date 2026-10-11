@@ -62,24 +62,32 @@ async function main() {
     jukirs.push({ id: jukir.id, name: jukir.name, areaId: jukir.areaId! });
   }
 
-  // ---- MOU rule ----
-  await prisma.mouRule.deleteMany();
-  await prisma.mouRule.create({
-    data: {
-      name: "MOU Prototype 2026",
-      taxPercent: TAX_PERCENT,
-      operatorPercent: 0,
-      jukirSharePercent: JUKIR_SHARE_PERCENT, // New field
-      validFrom: daysAgo(30),
-      validTo: null,
-    },
-  });
+   // ---- MOU rule ----
+   await prisma.mouRule.deleteMany();
+   await prisma.mouRule.create({
+     data: {
+       name: "MOU Prototype 2026",
+       taxPercent: TAX_PERCENT,
+       operatorPercent: 0,
+       jukirSharePercent: JUKIR_SHARE_PERCENT,
+       // Motorcycle rates
+       firstHour_motorcycle: 2000,
+       nextHour_motorcycle: 1000,
+       maximumDaily_motorcycle: 10000,
+       // Car rates
+       firstHour_car: 3000,
+       nextHour_car: 1500,
+       maximumDaily_car: 15000,
+       validFrom: daysAgo(30),
+       validTo: null,
+     },
+   });
 
   // ---- Parking Areas (kapasitas, bukan slot) ----
   const areaSpecs = [
-    { id: "area-a", name: "Area A", location: "Jl. Merdeka No. 1", vehicleType: "motorcycle", capacity: 50, latitude: -6.170436, longitude: 106.822783 },
-    { id: "area-b", name: "Area B", location: "Jl. Sudirman No. 88", vehicleType: "motorcycle", capacity: 30, latitude: -6.208763, longitude: 106.821810 },
-    { id: "area-c", name: "Area C", location: "Jl. Gatot Subroto No. 10", vehicleType: "car", capacity: 20, latitude: -6.235700, longitude: 106.828300 },
+    { id: "area-a", name: "Area A", location: "Jl. Merdeka No. 1", vehicleType: "motorcycle", capacity: 50, latitude: -7.2516314, longitude: 112.7553284 },
+    { id: "area-b", name: "Area B", location: "Jl. Sudirman No. 88", vehicleType: "motorcycle", capacity: 30, latitude: -7.2509817, longitude: 112.7554219 },
+    { id: "area-c", name: "Area C", location: "Jl. Gatot Subroto No. 10", vehicleType: "car", capacity: 20, latitude: -7.2512973, longitude: 112.7553142 },
   ];
   for (const a of areaSpecs) {
     const fields = {

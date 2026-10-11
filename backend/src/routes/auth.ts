@@ -19,8 +19,14 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-function sign(user: Pick<AuthUser, "id" | "role">) {
-  return jwt.sign({ id: user.id, role: user.role }, env.jwtSecret, { expiresIn: "7d" });
+// areaId WAJIB masuk token: requireJukirOrAdmin/requireJukir menolak JUKIR
+// yang tidak punya areaId, dan nilainya hanya dibaca dari req.user (hasil verify token).
+function sign(user: Pick<AuthUser, "id" | "role"> & { areaId?: string | null }) {
+  return jwt.sign(
+    { id: user.id, role: user.role, areaId: user.areaId ?? undefined },
+    env.jwtSecret,
+    { expiresIn: "7d" },
+  );
 }
 
 authRouter.post("/register", async (req, res, next) => {
@@ -54,7 +60,13 @@ authRouter.post("/login", async (req, res, next) => {
       return res.status(403).json({ success: false, message: "Account blocked", code: "BLOCKED" });
     }
     const token = sign(user);
-    res.json({ success: true, data: { token, user: { id: user.id, name: user.name, email, role: user.role } } });
+    res.json({
+      success: true,
+      data: {
+        token,
+        user: { id: user.id, name: user.name, email, role: user.role, areaId: user.areaId ?? undefined },
+      },
+    });
   } catch (e) {
     next(e);
   }
@@ -64,7 +76,7 @@ authRouter.get("/me", requireAuth, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { id: true, name: true, email: true, role: true, status: true },
+      select: { id: true, name: true, email: true, role: true, status: true, areaId: true },
     });
     res.json({ success: true, data: user });
   } catch (e) {

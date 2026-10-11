@@ -15,7 +15,9 @@ import { Reports } from "./pages/admin/Reports";
 import { Violations } from "./pages/admin/Violations";
 import { AreaScan } from "./pages/admin/AreaScan";
 import { ReportViolation } from "./pages/ReportViolation";
+import { Chatbot } from "./pages/Chatbot";
 import { JukirDashboard } from "./pages/jukir/Dashboard";
+import { UserDashboard } from "./pages/user/Dashboard";
 import { JukirTransactions } from "./pages/jukir/Transactions";
 import { JukirPayment } from "./pages/jukir/Payment";
 import { JukirSetoran } from "./pages/jukir/Setoran";
@@ -88,11 +90,13 @@ export default function App() {
 
         {/* User Routes */}
         <Route path="/user" element={<UserLayout />}>
-          <Route index element={<Navigate to="home" replace />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<RequireAuth><UserDashboard /></RequireAuth>} />
           <Route path="home" element={<Placeholder title="Home" phase="selanjutnya" />} />
           <Route path="find-parking" element={<FindParking />} />
           <Route path="my-transactions" element={<Placeholder title="Transaksi Saya" phase="selanjutnya" />} />
           <Route path="report-violation" element={<ReportViolation />} />
+          <Route path="chatbot" element={<Chatbot />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

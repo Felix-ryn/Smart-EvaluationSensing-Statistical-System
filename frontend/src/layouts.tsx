@@ -16,6 +16,7 @@ import {
   Settings,
   TrendingUp,
   Users2,
+  MessageCircle,
 } from "lucide-react";
 import { useAuth, type User } from "./contexts/AuthContext";
 
@@ -46,9 +47,11 @@ const menuConfig = {
     { to: "/jukir/traffic", label: "Traffic Area", icon: Activity },
   ],
   USER: [
+    { to: "/user/dashboard", label: "Tren & Jam Sibuk", icon: LayoutDashboard },
     { to: "/user/find-parking", label: "Cari Parkir", icon: Search },
     { to: "/user/my-transactions", label: "Transaksi Saya", icon: CreditCard },
     { to: "/user/report-violation", label: "Lapor Pelanggaran", icon: AlertTriangle },
+    { to: "/user/chatbot", label: "Chat Bot Parkir", icon: MessageCircle },
   ],
 };
 

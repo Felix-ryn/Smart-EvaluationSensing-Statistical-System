@@ -9,6 +9,15 @@ const createSchema = z.object({
   name: z.string().min(1),
   taxPercent: z.number().min(0).max(100),
   operatorPercent: z.number().min(0).max(100).default(0),
+  jukirSharePercent: z.number().min(0).max(100).default(15),
+  // Motorcycle rates
+  firstHour_motorcycle: z.number().positive().default(2000),
+  nextHour_motorcycle: z.number().positive().default(1000),
+  maximumDaily_motorcycle: z.number().positive().default(10000),
+  // Car rates
+  firstHour_car: z.number().positive().default(3000),
+  nextHour_car: z.number().positive().default(1500),
+  maximumDaily_car: z.number().positive().default(15000),
   validFrom: z.coerce.date(),
   validTo: z.coerce.date().optional().nullable(),
 });
@@ -17,6 +26,15 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   taxPercent: z.number().min(0).max(100).optional(),
   operatorPercent: z.number().min(0).max(100).optional(),
+  jukirSharePercent: z.number().min(0).max(100).optional(),
+  // Motorcycle rates
+  firstHour_motorcycle: z.number().positive().optional(),
+  nextHour_motorcycle: z.number().positive().optional(),
+  maximumDaily_motorcycle: z.number().positive().optional(),
+  // Car rates
+  firstHour_car: z.number().positive().optional(),
+  nextHour_car: z.number().positive().optional(),
+  maximumDaily_car: z.number().positive().optional(),
   validFrom: z.coerce.date().optional(),
   validTo: z.coerce.date().optional().nullable(),
 });

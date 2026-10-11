@@ -2,11 +2,17 @@
 // kapasitas tersedia, perhitungan setoran jukir, dan rekonsiliasi.
 
 import { prisma } from "../prisma.js";
+import type { ParkingRules } from "./fee.js";
 
 export interface MouSummary {
   taxPercent: number;
   operatorPercent: number;
   jukirSharePercent: number;
+  // Parking rates by vehicle type
+  rates: {
+    motorcycle: ParkingRules;
+    car: ParkingRules;
+  };
 }
 
 /** Ambil aturan MOU yang sedang berlaku (validFrom <= now <= validTo). */
@@ -22,7 +28,24 @@ export async function getActiveMou(): Promise<MouSummary> {
     taxPercent: rule?.taxPercent ?? 10,
     operatorPercent: rule?.operatorPercent ?? 0,
     jukirSharePercent: rule?.jukirSharePercent ?? 15,
+    rates: {
+      motorcycle: {
+        firstHour: rule?.firstHour_motorcycle ?? 2000,
+        nextHour: rule?.nextHour_motorcycle ?? 1000,
+        maximumDaily: rule?.maximumDaily_motorcycle ?? 10000,
+      },
+      car: {
+        firstHour: rule?.firstHour_car ?? 3000,
+        nextHour: rule?.nextHour_car ?? 1500,
+        maximumDaily: rule?.maximumDaily_car ?? 15000,
+      },
+    },
   };
+}
+
+/** Convert MouSummary rates to ParkingRules berdasarkan vehicle type */
+export function mouToParkingRules(mou: MouSummary, vehicleType: "motorcycle" | "car"): ParkingRules {
+  return mou.rates[vehicleType];
 }
 
 /** Kapasitas tersedia sebuah area = capacity - jumlah transaksi aktif. */

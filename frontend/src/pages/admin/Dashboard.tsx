@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Banknote, Car, Info, Layers, LayoutDashboard, QrCode, Users, Wallet } from "lucide-react";
+import { AlertTriangle, Banknote, Car, Layers, LayoutDashboard, QrCode, Users, Wallet } from "lucide-react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -14,6 +12,7 @@ import {
 } from "recharts";
 import { api } from "../../api/client";
 import { ParkingMap, type MapArea } from "../../components/ParkingMap";
+import { AdminAnalytics } from "../../components/analytics/AdminAnalytics";
 
 interface Stats {
   totalAreas: number;
@@ -26,18 +25,6 @@ interface Stats {
 }
 
 const rupiah = (n: number) => "Rp " + n.toLocaleString("id-ID");
-
-// ponytail: tren kendaraan pakai data contoh — backend /dashboard belum punya time-series.
-// Upgrade: tambah endpoint /api/dashboard/trend (count kendaraan per hari) lalu ganti sumber ini.
-const DUMMY_TREND = [
-  { date: "Sen", kendaraan: 210 },
-  { date: "Sel", kendaraan: 245 },
-  { date: "Rab", kendaraan: 198 },
-  { date: "Kam", kendaraan: 280 },
-  { date: "Jum", kendaraan: 320 },
-  { date: "Sab", kendaraan: 360 },
-  { date: "Min", kendaraan: 290 },
-];
 
 export function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -105,51 +92,27 @@ export function Dashboard() {
         <ParkingMap areas={areas} />
       </div>
 
-      <div className="grid grid-2">
-        <div className="card">
-          <h2>Tren Kendaraan di Area Parkir</h2>
-          <div className="alert alert-danger" style={{ marginBottom: 12 }}>
-            <Info size={14} strokeWidth={2} aria-hidden="true" /> Data contoh — tren harian belum tersedia dari server.
-          </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={DUMMY_TREND}>
-              <defs>
-                <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#009B83" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="#009B83" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Area
-                type="monotone"
-                dataKey="kendaraan"
-                stroke="#009B83"
-                strokeWidth={2}
-                fill="url(#trendFill)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="card">
-          <h2>Pendapatan: Cash vs QRIS</h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={revenueData || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" />
-              <XAxis dataKey="name" />
-              <YAxis tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : `${v}`)} />
-              <Tooltip formatter={(v) => rupiah(Number(v))} />
-              <Legend />
-              <Bar dataKey="nominal" name="Pendapatan" fill="#19B79A" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      {/* Tren kendaraan dipindah ke dashboard role USER (/user/dashboard),
+          di sana sudah memakai data nyata dari /api/dashboard/trend. */}
+      <div className="card">
+        <h2>Pendapatan: Cash vs QRIS</h2>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={revenueData || []} margin={{ top: 10, right: 16, bottom: 4, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" vertical={false} />
+            <XAxis dataKey="name" />
+            <YAxis tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : `${v}`)} />
+            <Tooltip formatter={(v) => rupiah(Number(v))} cursor={{ fill: "rgba(0,155,131,0.06)" }} />
+            <Legend />
+            <Bar dataKey="nominal" name="Pendapatan" fill="#19B79A" radius={[4, 4, 0, 0]} maxBarSize={120} />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
         </>
       )}
+
+      {/* Hasil analitik: segmentasi jukir (GMM) + forecast 3 bulan (SARIMA).
+          Dirender terpisah dari blok stats agar tetap tampil walau /dashboard gagal. */}
+      <AdminAnalytics />
     </div>
   );
 }
