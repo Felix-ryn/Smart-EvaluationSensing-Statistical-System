@@ -1,14 +1,17 @@
 import { useMemo } from "react";
 import { Award, Info, Target, TrendingUp } from "lucide-react";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
   Legend,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
 import {
   clusterColor,
@@ -38,34 +41,26 @@ export function JukirPerformance() {
   const me = data?.me ?? null;
   const myStat = me ? data?.clusterStatistics[me.clusterLabel] : undefined;
 
-  /**
-   * Radar perlu skala seragam, jadi tiap metrik dinormalisasi ke 0-100
-   * memakai nilai maksimum di seluruh jukir sebagai acuan.
-   * Konsistensi dibalik: std dev kecil = lebih baik.
-   */
-  const radarData = useMemo(() => {
-    if (!data || !me || !myStat) return [];
-    const maxEarnings = Math.max(...data.members.map((m) => m.dailyEarnings), 1);
-    const maxConsistency = Math.max(...data.members.map((m) => m.workConsistency), 0.0001);
+  const comparisonData = useMemo(
+    () => [
+      { model: "GMM", silhouette: data?.silhouette?.gmm ?? 0 },
+      { model: "HDBSCAN", silhouette: data?.silhouette?.hdbscan ?? 0 },
+    ],
+    [data],
+  );
 
-    return [
-      {
-        metric: "Penghasilan",
-        saya: (me.dailyEarnings / maxEarnings) * 100,
-        cluster: (myStat.avgEarnings / maxEarnings) * 100,
-      },
-      {
-        metric: "Konsistensi",
-        saya: (1 - me.workConsistency / maxConsistency) * 100,
-        cluster: (1 - myStat.avgConsistency / maxConsistency) * 100,
-      },
-      {
-        metric: "Ketepatan Waktu",
-        saya: me.punctualityPercent,
-        cluster: myStat.avgPunctuality,
-      },
-    ];
-  }, [data, me, myStat]);
+  const compositionData = useMemo(() => {
+    if (!data) return [] as Array<{ name: string; value: number; color: string }>;
+    const map = new Map<number, number>();
+    for (const m of data.members) map.set(m.clusterLabel, (map.get(m.clusterLabel) ?? 0) + 1);
+    return [...map.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([label, count]) => ({
+        name: label === -1 ? "Noise" : `C${label}`,
+        value: count,
+        color: label === -1 ? "#9ca3af" : clusterColor(label),
+      }));
+  }, [data]);
 
   const roster = useMemo(() => {
     if (!data) return [];
@@ -92,6 +87,9 @@ export function JukirPerformance() {
         ? { ok: true, text: "Jam kerja Anda cukup konsisten dibanding rekan satu cluster." }
         : { ok: false, text: "Jam kerja Anda cukup berfluktuasi — jadwal yang lebih teratur akan membantu." },
     );
+    if (me.clusterLabel === -1) {
+      out.push({ ok: false, text: "Anda teridentifikasi sebagai outlier (noise). Disarankan evaluasi pola jam hadir dan konsistensi jam kerja." });
+    }
     return out;
   }, [me, myStat]);
 
@@ -125,8 +123,46 @@ export function JukirPerformance() {
         <h2><Award className="title-icon" size={20} strokeWidth={1.8} /> Segmentasi Kinerja Jukir</h2>
         <p className="text-muted">
           {data.totalJukir} jukir dianalisis · {new Date(data.analyzedDate).toLocaleDateString("id-ID", { dateStyle: "long" })}
-          {" · pembaruan otomatis tiap 60 detik"}
+          {" · pembaruan otomatis tiap 60 detik"} · model terpilih: <strong>{(data.selectedModel ?? "gmm").toUpperCase()}</strong>
         </p>
+      </div>
+
+      <div className="grid grid-kpi">
+        <div className="card card-stat"><div className="stat-content"><span className="stat-label">Silhouette GMM</span><span className="stat-value">{data.silhouette?.gmm != null ? data.silhouette.gmm.toFixed(3) : "—"}</span></div></div>
+        <div className="card card-stat"><div className="stat-content"><span className="stat-label">Silhouette HDBSCAN</span><span className="stat-value">{data.silhouette?.hdbscan != null ? data.silhouette.hdbscan.toFixed(3) : "—"}</span></div></div>
+        <div className="card card-stat"><div className="stat-content"><span className="stat-label">Noise (cluster -1)</span><span className="stat-value">{data.noiseCount ?? 0}</span></div></div>
+      </div>
+
+      <div className="grid grid-2">
+        <div className="card">
+          <h2>Perbandingan Model</h2>
+          <p className="text-muted">Silhouette score lebih tinggi berarti pemisahan cluster lebih baik.</p>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={comparisonData} margin={{ top: 8, right: 18, left: 10, bottom: 6 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" vertical={false} />
+              <XAxis dataKey="model" />
+              <YAxis domain={[0, 1]} tickFormatter={(v) => Number(v).toFixed(1)} />
+              <Tooltip formatter={(v) => Number(v).toFixed(3)} />
+              <Bar dataKey="silhouette" fill="#0066cc" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card">
+          <h2>Komposisi Cluster</h2>
+          <p className="text-muted">Distribusi anggota cluster secara ringkas.</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <PieChart>
+              <Pie data={compositionData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={62} paddingAngle={2}>
+                {compositionData.map((d) => (
+                  <Cell key={d.name} fill={d.color} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(v, n) => [`${v} jukir`, String(n)]} />
+              <Legend verticalAlign="bottom" height={26} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {!me ? (
@@ -187,50 +223,21 @@ export function JukirPerformance() {
             </div>
           </div>
 
-          <div className="grid grid-2">
-            {/* Radar saya vs cluster */}
-            <div className="card">
-              <h2>Saya vs Rata-rata Cluster</h2>
-              <p className="text-muted">
-                Semua metrik diskalakan 0–100. Untuk konsistensi, nilai lebih tinggi berarti jam kerja lebih stabil.
-              </p>
-              <ResponsiveContainer width="100%" height={300}>
-                <RadarChart data={radarData}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="metric" />
-                  <PolarRadiusAxis angle={90} domain={[0, 100]} />
-                  <Tooltip formatter={(v) => `${Number(v).toFixed(1)} / 100`} />
-                  <Legend />
-                  <Radar name="Saya" dataKey="saya" stroke="#0066cc" fill="#0066cc" fillOpacity={0.45} />
-                  <Radar
-                    name="Rata-rata cluster"
-                    dataKey="cluster"
-                    stroke="#95a5a6"
-                    fill="#95a5a6"
-                    fillOpacity={0.25}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Saran */}
-            <div className="card">
-              <h2>Catatan Peningkatan</h2>
-              <ul style={{ lineHeight: 1.9, paddingLeft: 18 }}>
-                {tips.map((t, i) => (
-                  <li key={i}>
-                    <span className={t.ok ? "badge badge-success" : "badge badge-info"}>
-                      {t.ok ? "Baik" : "Perlu perhatian"}
-                    </span>{" "}
-                    {t.text}
-                  </li>
-                ))}
-              </ul>
-              <p className="text-muted" style={{ fontSize: 12, marginTop: 12 }}>
-                Segmentasi dihasilkan model Gaussian Mixture berdasarkan penghasilan, konsistensi jam kerja,
-                dan ketepatan waktu. Keyakinan model untuk penempatan Anda: {(me.gmmProbability * 100).toFixed(0)}%.
-              </p>
-            </div>
+          <div className="card">
+            <h2>Rekomendasi untuk Anda</h2>
+            <ul style={{ lineHeight: 1.9, paddingLeft: 18 }}>
+              {tips.map((t, i) => (
+                <li key={i}>
+                  <span className={t.ok ? "badge badge-success" : "badge badge-info"}>
+                    {t.ok ? "Baik" : "Perlu perhatian"}
+                  </span>{" "}
+                  {t.text}
+                </li>
+              ))}
+            </ul>
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 12 }}>
+              Hasil segmentasi ini adalah sinyal pembinaan (bukan penilaian final). Keyakinan penempatan Anda: {(me.gmmProbability * 100).toFixed(0)}%.
+            </p>
           </div>
         </>
       )}

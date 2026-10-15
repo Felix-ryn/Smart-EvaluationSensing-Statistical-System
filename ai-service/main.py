@@ -1,7 +1,7 @@
-"""SESS AI service — YOLOv8 parking detection.
+"""SESS AI service — YOLOv8 parking violation detection.
 
 Loads models/best.pt once and exposes POST /detect for images and short videos.
-Classes: space-empty, space-occupied, illegal-parking.
+Classes: parking_violation, parking_normal.
 """
 import io
 import os
@@ -11,13 +11,14 @@ import cv2
 from fastapi import FastAPI, File, UploadFile
 from ultralytics import YOLO
 
-MODEL_PATH = os.environ.get("MODEL_PATH", "/models/best.pt")
-CONF = float(os.environ.get("CONF", "0.25"))
+MODEL_PATH = os.environ.get("MODEL_PATH", r"C:\Smart-EvaluationSensing-Statistical-System\models\best.pt")
+CONF = float(os.environ.get("CONF", "0.5"))
+LOW_CONF = float(os.environ.get("LOW_CONF", "0.3"))
 VIDEO_FRAMES = int(os.environ.get("VIDEO_FRAMES", "8"))  # frames sampled from a video
 
 app = FastAPI(title="SESS AI")
 model = YOLO(MODEL_PATH)
-NAMES = model.names  # {0: 'space-empty', ...}
+NAMES = model.names  # {0: 'parking_violation', 1: 'parking_normal'}
 
 
 def _detections_from_result(result):
@@ -39,9 +40,8 @@ def _detections_from_result(result):
 
 def _summary(detections):
     return {
-        "empty": sum(d["class"] == "space-empty" for d in detections),
-        "occupied": sum(d["class"] == "space-occupied" for d in detections),
-        "illegal": sum(d["class"] == "illegal-parking" for d in detections),
+        "violation": sum(d["class"] == "parking_violation" for d in detections),
+        "normal": sum(d["class"] == "parking_normal" for d in detections),
     }
 
 
@@ -50,13 +50,22 @@ def _detect_image(data: bytes):
 
     arr = np.frombuffer(data, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    # Pass 1: threshold normal (lebih ketat untuk mengurangi false positive).
     result = model.predict(img, conf=CONF, verbose=False)[0]
-    return _detections_from_result(result)
+    detections = _detections_from_result(result)
+
+    # Pass 2 (fallback): jika kosong total, longgarkan threshold.
+    # Ini membantu kasus pelanggaran yang confidence-nya sedang.
+    if not detections and LOW_CONF < CONF:
+        result_low = model.predict(img, conf=LOW_CONF, verbose=False)[0]
+        detections = _detections_from_result(result_low)
+
+    return detections
 
 
 def _detect_video(path: str):
     """Sample a few evenly-spaced frames; return detections from the frame with
-    the most illegal-parking (fallback: most total detections)."""
+    the most parking violations (fallback: most total detections)."""
     cap = cv2.VideoCapture(path)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
     step = max(1, total // VIDEO_FRAMES)
@@ -69,7 +78,13 @@ def _detect_video(path: str):
         if idx % step == 0:
             result = model.predict(frame, conf=CONF, verbose=False)[0]
             dets = _detections_from_result(result)
-            score = _summary(dets)["illegal"] * 100 + len(dets)
+
+            # fallback per-frame jika kosong total
+            if not dets and LOW_CONF < CONF:
+                result_low = model.predict(frame, conf=LOW_CONF, verbose=False)[0]
+                dets = _detections_from_result(result_low)
+
+            score = _summary(dets)["violation"] * 100 + len(dets)
             if score > best_score:
                 best, best_score = dets, score
         idx += 1

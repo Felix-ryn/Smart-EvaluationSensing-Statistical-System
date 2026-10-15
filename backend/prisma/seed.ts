@@ -49,17 +49,16 @@ async function main() {
   for (const j of jukirSpecs) {
     const jukir = await prisma.user.upsert({
       where: { email: j.email },
-      update: { areaId: j.areaId, role: "JUKIR" },
+      update: { role: "JUKIR" },
       create: { 
         name: j.name, 
         email: j.email, 
         passwordHash, 
         role: "JUKIR", 
-        areaId: j.areaId,
         status: "ACTIVE"
       },
     });
-    jukirs.push({ id: jukir.id, name: jukir.name, areaId: jukir.areaId! });
+    jukirs.push({ id: jukir.id, name: jukir.name, areaId: j.areaId });
   }
 
    // ---- MOU rule ----
@@ -102,6 +101,14 @@ async function main() {
       where: { id: a.id },
       update: fields,
       create: { id: a.id, ...fields },
+    });
+  }
+
+  // Assign area jukir setelah area tersedia agar FK aman
+  for (const j of jukirSpecs) {
+    await prisma.user.update({
+      where: { email: j.email },
+      data: { areaId: j.areaId },
     });
   }
 
@@ -164,9 +171,9 @@ async function main() {
   // ---- CvDetection (hasil scan AI terbaru, untuk rekonsiliasi) ----
   await prisma.cvDetection.createMany({
     data: [
-      { areaId: "area-a", emptyCount: 13, occupiedCount: 37, illegalCount: 0, source: "cctv" },
-      { areaId: "area-b", emptyCount: 25, occupiedCount: 5, illegalCount: 1, source: "cctv" },
-      { areaId: "area-c", emptyCount: 15, occupiedCount: 5, illegalCount: 0, source: "cctv" },
+      { areaId: "area-a", normalCount: 37, violationCount: 0, source: "cctv" },
+      { areaId: "area-b", normalCount: 5, violationCount: 1, source: "cctv" },
+      { areaId: "area-c", normalCount: 5, violationCount: 0, source: "cctv" },
     ],
   });
   

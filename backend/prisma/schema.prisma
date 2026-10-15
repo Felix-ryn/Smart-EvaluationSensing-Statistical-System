@@ -161,16 +161,15 @@ model MouRule {
   updatedAt       DateTime  @updatedAt
 }
 
-// Hasil deteksi Computer Vision per area (bukan per slot).
+// Hasil deteksi Computer Vision per area (parking violation detection).
 model CvDetection {
-  id            String   @id @default(uuid())
-  areaId        String
-  detectedAt    DateTime @default(now())
-  emptyCount    Int      @default(0)
-  occupiedCount Int      @default(0)
-  illegalCount  Int      @default(0)
-  source        String   @default("cctv") // "cctv" | "photo" | "video"
-  createdAt     DateTime @default(now())
+  id              String   @id @default(uuid())
+  areaId          String
+  detectedAt      DateTime @default(now())
+  violationCount  Int      @default(0)
+  normalCount     Int      @default(0)
+  source          String   @default("cctv") // "cctv" | "photo" | "video"
+  createdAt       DateTime @default(now())
 
   area ParkingArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
 }

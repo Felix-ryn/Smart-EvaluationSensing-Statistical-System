@@ -433,6 +433,7 @@ a { color: inherit; text-decoration: none; }
 .icon-info { background: var(--lms-primary-light); color: #2A6FA3; }
 .icon-warning { background: var(--warning-bg); color: #B0741E; }
 .icon-success { background: var(--success-bg); color: var(--lms-success); }
+.icon-danger { background: var(--danger-bg); color: #C4444C; }
 
 /* Inline icons inside headings, cells, and small chips */
 .title-icon {
@@ -493,6 +494,60 @@ a { color: inherit; text-decoration: none; }
   color: var(--lms-text-primary);
   margin-top: 0.25rem;
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.admin-kpi-grid .card-stat {
+  min-height: 108px;
+}
+
+.admin-kpi-grid-fixed {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.admin-kpi-card {
+  min-height: 96px;
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.admin-top-analytics-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.admin-top-analytics-grid > .card {
+  margin-bottom: 0;
+}
+
+.admin-analytics-equal-card {
+  min-height: 356px;
+}
+
+.admin-jukir-scroll-wrap {
+  max-height: 255px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--lms-border-light);
+  border-radius: 10px;
+}
+
+.admin-jukir-compare-table {
+  margin-bottom: 0;
+}
+
+.admin-jukir-compare-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f5fafa;
+}
+
+.admin-stat-value {
+  font-size: clamp(1.05rem, 1.45vw, 1.35rem);
+  line-height: 1.25;
 }
 
 /* =========================================
@@ -845,6 +900,14 @@ textarea.input::placeholder {
   .page-subtitle { display: none; }
 
   .grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .admin-kpi-grid-fixed {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-top-analytics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 767px) {
@@ -873,6 +936,14 @@ textarea.input::placeholder {
 
   .grid-kpi { grid-template-columns: 1fr; }
 
+  .admin-kpi-grid-fixed {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-top-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
   .table-wrap { overflow-x: auto; }
 }
 
@@ -882,3 +953,155 @@ textarea.input::placeholder {
 .qr-info { width: 100%; display: grid; gap: 6px; }
 .qr-info .info-row { display: flex; justify-content: space-between; font-size: 13px; }
 .qr-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-500, #718994); }
+
+/* Leaflet marker tint for admin parking map */
+.parking-map-red-marker {
+  filter: hue-rotate(-30deg) saturate(220%) brightness(0.95);
+}
+
+/* Admin Areas + Live Traffic + Violation input refinements */
+.areas-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.areas-inline-input {
+  min-width: 100px;
+  max-width: 130px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.violation-form-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.violation-upload-box {
+  border: 1px dashed var(--lms-border);
+  background: #fcfefe;
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.violation-preview {
+  margin-top: 0.6rem;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--lms-border-light);
+}
+
+.area-card {
+  border: 1px solid var(--lms-border-light);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.area-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--lms-shadow-md);
+}
+
+.area-card.active {
+  border-color: var(--lms-primary);
+  box-shadow: 0 0 0 2px rgba(0, 155, 131, 0.12);
+}
+
+.area-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.area-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.stat-item {
+  background: #f7fbfb;
+  border: 1px solid var(--lms-border-light);
+  border-radius: 8px;
+  padding: 0.55rem;
+}
+
+.stat-item .stat-label {
+  font-size: 0.68rem;
+}
+
+.stat-item .stat-value {
+  margin-top: 0.2rem;
+  font-size: 1.1rem;
+}
+
+.live-traffic-meter {
+  position: relative;
+  margin-top: 0.8rem;
+  height: 24px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #edf4f4;
+  border: 1px solid var(--lms-border-light);
+}
+
+.live-traffic-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.live-traffic-meter span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #123747;
+}
+
+.live-traffic-detail-chart {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.detail-chart-row {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.detail-chart-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #edf4f4;
+  overflow: hidden;
+}
+
+.detail-chart-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.detail-chart-filled {
+  background: linear-gradient(90deg, #ffb347, #ff8a65);
+}
+
+.detail-chart-empty {
+  background: linear-gradient(90deg, #73d6b6, #2ab38c);
+}
+
+.violations-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}

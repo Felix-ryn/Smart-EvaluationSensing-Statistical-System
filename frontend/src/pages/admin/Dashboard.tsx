@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { api } from "../../api/client";
 import { ParkingMap, type MapArea } from "../../components/ParkingMap";
-import { AdminAnalytics } from "../../components/analytics/AdminAnalytics";
+import { AdminAnalytics, AdminAnalyticsTopCards } from "../../components/analytics/AdminAnalytics";
 
 interface Stats {
   totalAreas: number;
@@ -75,13 +75,13 @@ export function Dashboard() {
         <div className="loading">Memuat data...</div>
       ) : stats && (
         <>
-      <div className="grid grid-kpi">
+      <div className="grid admin-kpi-grid-fixed">
         {(cards || []).map(({ label, value, icon: Icon, tone }) => (
-          <div key={label} className="card card-stat">
+          <div key={label} className="card card-stat admin-kpi-card">
             <div className={`icon-container ${tone}`}><Icon size={20} strokeWidth={1.8} aria-hidden="true" /></div>
             <div className="stat-content">
               <span className="stat-label">{label}</span>
-              <span className="stat-value">{value}</span>
+              <span className="stat-value admin-stat-value">{value}</span>
             </div>
           </div>
         ))}
@@ -92,26 +92,25 @@ export function Dashboard() {
         <ParkingMap areas={areas} />
       </div>
 
-      {/* Tren kendaraan dipindah ke dashboard role USER (/user/dashboard),
-          di sana sudah memakai data nyata dari /api/dashboard/trend. */}
-      <div className="card">
-        <h2>Pendapatan: Cash vs QRIS</h2>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={revenueData || []} margin={{ top: 10, right: 16, bottom: 4, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" vertical={false} />
-            <XAxis dataKey="name" />
-            <YAxis tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : `${v}`)} />
-            <Tooltip formatter={(v) => rupiah(Number(v))} cursor={{ fill: "rgba(0,155,131,0.06)" }} />
-            <Legend />
-            <Bar dataKey="nominal" name="Pendapatan" fill="#19B79A" radius={[4, 4, 0, 0]} maxBarSize={120} />
-          </BarChart>
-        </ResponsiveContainer>
+      <div className="grid admin-top-analytics-grid">
+        <div className="card admin-analytics-equal-card">
+          <h2>Pendapatan: Cash vs QRIS</h2>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={revenueData || []} margin={{ top: 10, right: 16, bottom: 4, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" vertical={false} />
+              <XAxis dataKey="name" />
+              <YAxis tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : `${v}`)} />
+              <Tooltip formatter={(v) => rupiah(Number(v))} cursor={{ fill: "rgba(0,155,131,0.06)" }} />
+              <Legend />
+              <Bar dataKey="nominal" name="Pendapatan" fill="#19B79A" radius={[4, 4, 0, 0]} maxBarSize={70} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <AdminAnalyticsTopCards />
       </div>
         </>
       )}
 
-      {/* Hasil analitik: segmentasi jukir (GMM) + forecast 3 bulan (SARIMA).
-          Dirender terpisah dari blok stats agar tetap tampil walau /dashboard gagal. */}
       <AdminAnalytics />
     </div>
   );

@@ -27,6 +27,8 @@ services:
       - ./models:/models:ro
     environment:
       MODEL_PATH: /models/best.pt
+      CONF: "0.5"
+      LOW_CONF: "0.3"
 
 volumes:
   sess_pgdata:

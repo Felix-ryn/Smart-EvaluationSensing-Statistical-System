@@ -19,13 +19,13 @@ const storage = multer.diskStorage({
 export const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024 } });
 
 export interface Detection {
-  class: "space-empty" | "space-occupied" | "illegal-parking";
+  class: "parking_violation" | "parking_normal";
   confidence: number;
   box: [number, number, number, number]; // x, y, w, h
 }
 export interface DetectResult {
   detections: Detection[];
-  summary: { empty: number; occupied: number; illegal: number };
+  summary: { violation: number; normal: number };
 }
 
 /** Send an uploaded file to the Python AI service and return its detections. */

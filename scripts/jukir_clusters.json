@@ -1,59 +1,346 @@
 {
-  "analyzed_date": "2026-10-05",
+  "analyzed_date": "2026-10-13",
   "analysis_window_days": 90,
-  "optimal_clusters": 3,
-  "bic_scores": {
-    "2": -41.81826371777052,
-    "3": -73.29615906924391
+  "selected_model": "hdbscan",
+  "model_comparison": {
+    "gmm": {
+      "silhouette": 0.3896858815563313,
+      "optimal_clusters": 2,
+      "bic_scores": {
+        "2": -147.6074534319005,
+        "3": -124.79503740254101,
+        "4": -111.77285782808599,
+        "5": -94.86057383256298,
+        "6": -104.77356096283691
+      }
+    },
+    "hdbscan": {
+      "silhouette": 0.49618081774921224,
+      "noise_count": 10,
+      "min_cluster_size": 4
+    }
   },
+  "noise_rule": "clusterLabel = -1 => isNoise=true",
   "jukir_assignments": [
     {
-      "id": "3eaf3a89-7a22-48a7-8e26-9cac62fd2c5c",
-      "name": "Agus Wijaya",
-      "cluster": 0,
-      "confidence": 1.0,
-      "daily_earnings": 7000.0,
-      "work_consistency": 1.0960461210857833,
-      "punctuality_percent": 100.0,
-      "attendance_days": 53,
-      "total_earnings": 371000.0,
-      "performance_label": "Perlu Pendampingan (Needs Support)"
+      "id": "00a2518d-f5a8-4f88-80c4-b1d0cad79eea",
+      "name": "Jukir Auto 16",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4338500.0,
+      "work_consistency": 0.8270811028937527,
+      "punctuality_percent": 100.0
     },
     {
-      "id": "43d874b1-01f7-4a4d-bf63-69fb55fe78fc",
+      "id": "06bff02f-e909-4603-8ba8-29e6ae600373",
+      "name": "Jukir Auto 20",
+      "cluster": 0,
+      "isNoise": false,
+      "confidence": 0.846296131712274,
+      "daily_earnings": 4207500.0,
+      "work_consistency": 0.9340623639323758,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "078949a3-c0db-447d-b81b-f6375a772574",
+      "name": "Jukir Auto 23",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4424000.0,
+      "work_consistency": 0.9242178461591484,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "0b1d1bd6-4ab7-4968-b38e-23ec25c5ed7b",
+      "name": "Jukir Auto 24",
+      "cluster": 1,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4382500.0,
+      "work_consistency": 1.1078715314248602,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "117d891b-d59c-4850-a9b3-7838243601a5",
+      "name": "Dewi Lestari",
+      "cluster": 0,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4325500.0,
+      "work_consistency": 1.0161922426348418,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "141297d4-11aa-491f-bbbf-f4624bfab765",
+      "name": "Jukir Auto 21",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4507500.0,
+      "work_consistency": 1.0867086683542164,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "205ebdd6-d27c-46f0-9f70-94b72f5c5af8",
+      "name": "Jukir Auto 19",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4617500.0,
+      "work_consistency": 0.9321308351185916,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "2a04ab52-9b9f-4d55-815f-4ce6f0c73ece",
+      "name": "Jukir Auto 28",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 0.6917612673095666,
+      "daily_earnings": 4406000.0,
+      "work_consistency": 0.8706178210387218,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "2e279025-bed0-428d-b0dc-3fcdddb45de8",
       "name": "Siti Rahayu",
       "cluster": 0,
+      "isNoise": false,
       "confidence": 1.0,
-      "daily_earnings": 7000.0,
-      "work_consistency": 1.080868110492341,
-      "punctuality_percent": 100.0,
-      "attendance_days": 49,
-      "total_earnings": 343000.0,
-      "performance_label": "Perlu Pendampingan (Needs Support)"
+      "daily_earnings": 4281000.0,
+      "work_consistency": 1.0246917043016877,
+      "punctuality_percent": 100.0
     },
     {
-      "id": "64c3c6b3-7e76-461c-922a-95eb1bd36e53",
-      "name": "Dewi Lestari",
+      "id": "30560c05-fa99-4729-b28e-d7b54a7825ea",
+      "name": "Jukir Auto 14",
+      "cluster": 1,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4390000.0,
+      "work_consistency": 1.0556818966771189,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "33ca2237-039a-429b-81ba-3a4501840fa2",
+      "name": "Jukir Auto 05",
       "cluster": 2,
+      "isNoise": false,
       "confidence": 1.0,
-      "daily_earnings": 3000.0,
-      "work_consistency": 1.14084417111169,
-      "punctuality_percent": 71.42857142857143,
-      "attendance_days": 49,
-      "total_earnings": 147000.0,
-      "performance_label": "Perlu Pendampingan (Needs Support)"
+      "daily_earnings": 4405000.0,
+      "work_consistency": 0.9168402570714675,
+      "punctuality_percent": 100.0
     },
     {
-      "id": "ee4bc529-59b9-4211-9fdb-7fac169426f7",
+      "id": "410b07c9-0b11-4510-907a-878d94bb627a",
+      "name": "Jukir Auto 32",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4453000.0,
+      "work_consistency": 0.9275754201945039,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "48d03e25-43d6-467b-bb7f-acf94e25d595",
+      "name": "Jukir Auto 25",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 0.6761023876194706,
+      "daily_earnings": 4415000.0,
+      "work_consistency": 0.8340609245986051,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "55562e09-bed7-4c45-acb7-6b568af35ccc",
+      "name": "Jukir Auto 11",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4578000.0,
+      "work_consistency": 0.9647431384999383,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "59c27fb7-1d10-4eb6-be13-848d7c207766",
+      "name": "Jukir Auto 30",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4472500.0,
+      "work_consistency": 1.1405200111316147,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "6072e678-2e17-4221-b8a6-590e26a232b8",
+      "name": "Jukir Auto 18",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 0.9461556669149104,
+      "daily_earnings": 4499500.0,
+      "work_consistency": 0.9815678145284183,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "70ae99f2-3376-42b7-a14d-5d9c8bf03357",
+      "name": "Jukir Auto 09",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4475500.0,
+      "work_consistency": 1.0970080481454758,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "82ac0dcf-c643-4828-bec1-3d32e438abf7",
+      "name": "Agus Wijaya",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4316000.0,
+      "work_consistency": 1.1305400187735644,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "918b0941-ec78-44f1-8f6d-92e947b1bd62",
+      "name": "Jukir Auto 29",
+      "cluster": 1,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4403500.0,
+      "work_consistency": 1.03891531259855,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "938d75df-1fec-4ada-aeb2-2df006e1a814",
+      "name": "Jukir Auto 26",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 0.9461556669149104,
+      "daily_earnings": 4486500.0,
+      "work_consistency": 0.9598572078816645,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "9e096b27-68cd-4ad0-aa13-82b7e4ab2e06",
+      "name": "Jukir Auto 13",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4585000.0,
+      "work_consistency": 0.8471458226350393,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "a9577327-fd5d-42ed-964a-ae159e3b8b08",
+      "name": "Jukir Auto 08",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 0.6917612673095666,
+      "daily_earnings": 4409500.0,
+      "work_consistency": 0.8805195553582668,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "c5acb0a5-9cfb-4d6b-87cc-1a2b158df11e",
+      "name": "Jukir Auto 27",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4288000.0,
+      "work_consistency": 0.8083644666285439,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "c7bd3c18-e820-4892-8c58-6998a3e52091",
+      "name": "Jukir Auto 12",
+      "cluster": 0,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4276000.0,
+      "work_consistency": 0.9769659802440847,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "cb537acf-1db1-4d88-9538-8bfa60f639cb",
+      "name": "Jukir Auto 07",
+      "cluster": 0,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4272000.0,
+      "work_consistency": 1.0493468699405073,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "cc8abdc3-21da-464e-aaa6-bb49702b41d9",
+      "name": "Jukir Auto 31",
+      "cluster": 1,
+      "isNoise": false,
+      "confidence": 0.9036867030821472,
+      "daily_earnings": 4397000.0,
+      "work_consistency": 0.9809917105814615,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "cfae89a3-dd64-41b7-943b-2d29b02456df",
       "name": "Budi Santoso",
       "cluster": 1,
+      "isNoise": false,
       "confidence": 1.0,
-      "daily_earnings": 9000.0,
-      "work_consistency": 1.2152654176548288,
-      "punctuality_percent": 100.0,
-      "attendance_days": 55,
-      "total_earnings": 495000.0,
-      "performance_label": "Perlu Pendampingan (Needs Support)"
+      "daily_earnings": 4409000.0,
+      "work_consistency": 1.0499052826545137,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "db2162bf-23a2-49fe-9d21-08f4f3a242bd",
+      "name": "Jukir Auto 17",
+      "cluster": -1,
+      "isNoise": true,
+      "confidence": 0.0,
+      "daily_earnings": 4590000.0,
+      "work_consistency": 0.9899010995922674,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "f191e958-f1f1-4e2b-9c39-6fcc705e1beb",
+      "name": "Jukir Auto 15",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 0.9034235230267276,
+      "daily_earnings": 4480000.0,
+      "work_consistency": 0.9040829463633069,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "f57fd8bb-d450-44d4-96a9-f2c3b8b5e413",
+      "name": "Jukir Auto 10",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 0.9461556669149104,
+      "daily_earnings": 4481000.0,
+      "work_consistency": 0.9389123324108563,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "f73163fb-d4f1-4231-8bdb-88994653e89c",
+      "name": "Jukir Auto 06",
+      "cluster": 2,
+      "isNoise": false,
+      "confidence": 1.0,
+      "daily_earnings": 4455000.0,
+      "work_consistency": 0.9218643892750636,
+      "punctuality_percent": 100.0
+    },
+    {
+      "id": "fc67f2a7-6132-49e4-b7bf-1a78ccf1c475",
+      "name": "Jukir Auto 22",
+      "cluster": 0,
+      "isNoise": false,
+      "confidence": 0.846296131712274,
+      "daily_earnings": 4249000.0,
+      "work_consistency": 0.9253658282763071,
+      "punctuality_percent": 100.0
     }
   ]
 }

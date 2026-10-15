@@ -14,6 +14,7 @@ export interface ClusterMember {
   dailyEarnings: number;
   workConsistency: number;
   punctualityPercent: number;
+  isNoise?: boolean;
 }
 
 export interface ClusterStat {
@@ -29,6 +30,9 @@ export interface AdminSegmentation {
   totalJukir: number;
   members: ClusterMember[];
   clusterStatistics: Record<number, ClusterStat>;
+  selectedModel?: string;
+  silhouette?: { gmm: number | null; hdbscan: number | null };
+  noiseCount?: number;
 }
 
 /** Shape dari GET /analytics/segmentation/me (jukir). */
@@ -37,6 +41,9 @@ export interface JukirSegmentation {
   totalJukir: number;
   members: ClusterMember[];
   clusterStatistics: Record<number, ClusterStat>;
+  selectedModel?: string;
+  silhouette?: { gmm: number | null; hdbscan: number | null };
+  noiseCount?: number;
   me: (ClusterMember & { rank: number | null; clusterSize: number | null }) | null;
 }
 
@@ -45,6 +52,9 @@ export interface ModelInfo {
   analysisWindowDays: number | null;
   optimalClusters: number | null;
   bicScores: Record<string, number>;
+  selectedModel?: string | null;
+  silhouette?: { gmm: number | null; hdbscan: number | null };
+  noiseCount?: number | null;
 }
 
 export interface ForecastPoint {
@@ -60,9 +70,34 @@ export interface ForecastArea {
   model_bic?: number;
   model_rmse?: number;
   forecast: ForecastPoint[];
+  monthly_forecast?: Array<{ month: string; point: number }>;
+  selected_model?: string;
+  model_comparison?: {
+    xgboost?: { mape: number };
+    prophet?: { mape: number };
+  };
+  test_window?: {
+    train_days: number;
+    test_days: number;
+    split_rule: string;
+  };
 }
 
 export type ForecastPayload = Record<string, ForecastArea>;
+
+export interface ShiftRevenuePoint {
+  date: string;
+  pagi: number;
+  sore: number;
+  total: number;
+}
+
+export interface ShiftRevenuePayload {
+  days: number;
+  granularity: "daily" | "weekly";
+  overallAverage: number;
+  series: ShiftRevenuePoint[];
+}
 
 // ============================================
 // FETCHERS
@@ -89,6 +124,7 @@ export async function fetchAdminSegmentation(): Promise<AdminSegmentation> {
       dailyEarnings: r.dailyEarnings,
       workConsistency: r.workConsistency,
       punctualityPercent: r.punctualityPercent,
+      isNoise: r.clusterLabel === -1,
     }));
 
   return {
@@ -96,12 +132,22 @@ export async function fetchAdminSegmentation(): Promise<AdminSegmentation> {
     totalJukir: d.totalJukir ?? members.length,
     members,
     clusterStatistics: d.clusterStatistics ?? {},
+    selectedModel: d.selectedModel,
+    silhouette: d.silhouette,
+    noiseCount: d.noiseCount,
   };
 }
 
 export async function fetchJukirSegmentation(): Promise<JukirSegmentation> {
   const { data } = await api.get("/analytics/segmentation/me");
-  return data.data;
+  const d = data.data;
+  return {
+    ...d,
+    members: (d.members ?? []).map((m: any) => ({
+      ...m,
+      isNoise: m.clusterLabel === -1,
+    })),
+  };
 }
 
 export async function fetchModelInfo(): Promise<ModelInfo> {
@@ -111,6 +157,16 @@ export async function fetchModelInfo(): Promise<ModelInfo> {
 
 export async function fetchForecast(): Promise<ForecastPayload> {
   const { data } = await api.get("/analytics/forecast/latest");
+  return data.data;
+}
+
+export async function fetchShiftRevenue(
+  days = 90,
+  granularity: "daily" | "weekly" = "daily",
+): Promise<ShiftRevenuePayload> {
+  const { data } = await api.get("/analytics/shift-revenue", {
+    params: { days, granularity },
+  });
   return data.data;
 }
 
