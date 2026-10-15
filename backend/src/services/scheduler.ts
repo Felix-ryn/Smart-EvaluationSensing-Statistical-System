@@ -1,19 +1,22 @@
 /**
  * Forecast Scheduler Service
- * Runs SARIMA forecast automatically on monthly basis
+ * Runs modern forecast automatically on monthly basis
  * - Manual trigger: On-demand via API
  * - Scheduled trigger: Last day of month at 23:00
  */
 
-import { spawn } from 'child_process';
-import { writeFileSync, appendFileSync } from 'fs';
+import { appendFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import cron from 'node-cron';
 import { prisma } from '../prisma.js';
+import { spawnPythonScript } from '../lib/python.js';
 
 // Log file path
 const logsDir = join(process.cwd(), '../logs');
 const logFile = join(logsDir, 'forecast.log');
+
+// Ensure logs directory exists before any write attempt.
+mkdirSync(logsDir, { recursive: true });
 
 /**
  * Log message to file with timestamp
@@ -39,69 +42,100 @@ export async function runForecast(): Promise<{ success: boolean; jobId: string; 
   logMessage(`🚀 [${jobId}] Forecast job started`);
 
   return new Promise((resolve) => {
-    const scriptPath = join(process.cwd(), '../scripts/forecast_revenue_sarima.py');
-    
-    const forecast = spawn('python', [scriptPath], {
-      cwd: join(process.cwd(), '../scripts'),
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
+    let resolved = false;
 
-    let output = '';
-    let errorOutput = '';
+    const finish = (result: { success: boolean; jobId: string; message: string }) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(result);
+    };
 
-    // Capture stdout
-    forecast.stdout?.on('data', (data) => {
-      const message = data.toString();
-      output += message;
-      logMessage(`📤 ${message.trim()}`);
-    });
-
-    // Capture stderr
-    forecast.stderr?.on('data', (data) => {
-      const message = data.toString();
-      errorOutput += message;
-      logMessage(`❌ ${message.trim()}`);
-    });
-
-    // Handle completion
-    forecast.on('close', async (code) => {
-      if (code === 0) {
-        logMessage(`✅ [${jobId}] Forecast completed successfully`);
-        
-        // Save forecast execution record to database
-        try {
-          await prisma.jukirCluster.findFirst({
-            where: { analyzedTo: new Date() }
-          });
-          logMessage(`✅ [${jobId}] Results verified in database`);
-        } catch (err) {
-          logMessage(`⚠️  [${jobId}] Could not verify database records`);
-        }
-
-        resolve({
-          success: true,
-          jobId,
-          message: 'Forecast completed successfully'
-        });
-      } else {
-        logMessage(`❌ [${jobId}] Forecast failed with exit code ${code}`);
-        resolve({
+    const start = async () => {
+      let forecast;
+      try {
+        const launched = await spawnPythonScript('forecast_revenue_modern.py', { stdio: 'pipe' });
+        forecast = launched.child;
+        logMessage(
+          `ℹ️  [${jobId}] Python command: ${launched.python.command} ${launched.python.argsPrefix.join(' ')}`.trim(),
+        );
+        logMessage(`ℹ️  [${jobId}] Script path: ${launched.scriptPath}`);
+      } catch (err: any) {
+        const message = err?.message ?? 'Unknown spawn error';
+        logMessage(`❌ [${jobId}] Spawn error: ${message}`);
+        finish({
           success: false,
           jobId,
-          message: `Forecast failed with exit code ${code}`
+          message: `Error: ${message}`,
         });
+        return;
       }
-    });
 
-    // Handle errors
-    forecast.on('error', (err) => {
-      logMessage(`❌ [${jobId}] Spawn error: ${err.message}`);
-      resolve({
-        success: false,
-        jobId,
-        message: `Error: ${err.message}`
+      let output = '';
+      let errorOutput = '';
+
+      // Capture stdout
+      forecast.stdout?.on('data', (data) => {
+        const message = data.toString();
+        output += message;
+        logMessage(`📤 ${message.trim()}`);
       });
-    });
+
+      // Capture stderr
+      forecast.stderr?.on('data', (data) => {
+        const message = data.toString();
+        errorOutput += message;
+        logMessage(`❌ ${message.trim()}`);
+      });
+
+      // Handle completion
+      forecast.on('close', async (code) => {
+        if (code === 0) {
+          logMessage(`✅ [${jobId}] Forecast completed successfully`);
+
+          // Save forecast execution record to database
+          try {
+            await prisma.jukirCluster.findFirst({
+              where: { analyzedTo: new Date() }
+            });
+            logMessage(`✅ [${jobId}] Results verified in database`);
+          } catch (err) {
+            logMessage(`⚠️  [${jobId}] Could not verify database records`);
+          }
+
+          finish({
+            success: true,
+            jobId,
+            message: 'Forecast completed successfully'
+          });
+        } else {
+          const details = errorOutput.trim() || output.trim();
+          logMessage(`❌ [${jobId}] Forecast failed with exit code ${code}`);
+          finish({
+            success: false,
+            jobId,
+            message: details
+              ? `Forecast failed with exit code ${code}: ${details}`
+              : `Forecast failed with exit code ${code}`
+          });
+        }
+      });
+
+      // Handle errors
+      forecast.on('error', (err) => {
+        logMessage(`❌ [${jobId}] Spawn error: ${err.message}`);
+        finish({
+          success: false,
+          jobId,
+          message: `Error: ${err.message}`
+        });
+      });
+
+      // keep refs "used" to avoid TS noUnusedLocals in stricter setups
+      void output;
+      void errorOutput;
+    };
+
+    void start();
   });
 }
 

@@ -2,25 +2,35 @@ import { useState, useEffect } from "react";
 import { BarChart3, Calendar, Check, ClipboardList, Hourglass, Printer, Upload, Wallet, X } from "lucide-react";
 import { apiClient } from "../../api/client";
 
+interface BreakdownItem {
+  vehicleType: string;
+  count: number;
+  amount: number;
+}
+
 interface SetoranData {
+  id: string;
   jukirId: string;
   areaId: string;
-  date: Date;
+  date: string;
   totalTransactions: number;
   grossAmount: number;
   taxPercent: number;
   taxAmount?: number;
   jukirSharePercent: number;
   jukirShareAmount?: number;
+  netSetoranAmount: number;
   status: "PENDING" | "APPROVED" | "REJECTED";
-  approvedAt?: Date;
+  approvedAt?: string;
   adminNote?: string;
+  breakdown?: BreakdownItem[];
 }
 
 export function JukirSetoran() {
   const [loading, setLoading] = useState(true);
   const [setoranData, setSetoranData] = useState<SetoranData | null>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchSetoran();
@@ -28,16 +38,13 @@ export function JukirSetoran() {
 
   const fetchSetoran = async () => {
     try {
-      // Get today's setoran
       const today = new Date().toISOString().split("T")[0];
-      
-      // Get current data
+
       const currentResponse = await apiClient.get(`/jukir/setoran/daily?date=${today}`);
       if (currentResponse.data.success) {
         setSetoranData(currentResponse.data.data);
       }
 
-      // Get history
       const historyResponse = await apiClient.get("/jukir/setoran/history?limit=20");
       if (historyResponse.data.success) {
         setHistory(historyResponse.data.data);
@@ -46,6 +53,26 @@ export function JukirSetoran() {
       console.error("Error fetching setoran:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const submitSetoran = async () => {
+    if (!setoranData || setoranData.status !== "PENDING") return;
+    if (!confirm("Submit setoran hari ini untuk approval admin?")) return;
+
+    try {
+      setSubmitting(true);
+      const response = await apiClient.post("/jukir/setoran/submit", {
+        date: setoranData.date,
+      });
+      if (response.data.success) {
+        alert("Setoran berhasil disubmit");
+        fetchSetoran();
+      }
+    } catch (error: any) {
+      alert(error?.response?.data?.message ?? "Gagal submit setoran");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -64,6 +91,8 @@ export function JukirSetoran() {
     }
   };
 
+  const totalBreakdown = (setoranData?.breakdown ?? []).reduce((sum, b) => sum + b.amount, 0);
+
   if (loading) {
     return <div className="page"><div className="loading">Memuat setoran...</div></div>;
   }
@@ -72,12 +101,10 @@ export function JukirSetoran() {
     <div className="page">
       <header className="page-header">
         <h1><Wallet className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Pajak &amp; Setoran Jukir</h1>
-        <p>Rincian setoran auto-calculated untuk hari ini</p>
+        <p>Pajak otomatis dipotong dari pendapatan bruto berdasarkan MOU aktif</p>
       </header>
 
-      {/* Main Calculation Card */}
       <div className="grid grid-2">
-        {/* Left Column - Daily Summary */}
         <div className="card">
           <h2><Calendar className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Setoran Hari Ini</h2>
           {setoranData ? (
@@ -88,7 +115,7 @@ export function JukirSetoran() {
                   weekday: "long",
                   year: "numeric",
                   month: "long",
-                  day: "numeric"
+                  day: "numeric",
                 })}</span>
               </div>
 
@@ -103,23 +130,21 @@ export function JukirSetoran() {
               </div>
 
               <div className="calculation-section">
-                <h3>Distribution</h3>
-                
+                <h3>Distribusi</h3>
+
                 <div className="calc-row">
                   <span>Pajak Pengelola ({setoranData.taxPercent}%)</span>
                   <span className="text-danger">-{formatCurrency(setoranData.taxAmount || 0)}</span>
                 </div>
 
                 <div className="calc-row">
-                  <span>Bagian Jurik ({setoranData.jukirSharePercent}%)</span>
-                  <span className="text-success">+{formatCurrency(setoranData.jukirShareAmount || 0)}</span>
+                  <span>Info Bagian Jukir ({setoranData.jukirSharePercent}%)</span>
+                  <span className="text-success">{formatCurrency(setoranData.jukirShareAmount || 0)}</span>
                 </div>
 
                 <div className="calc-total">
                   <span>SETORAN HARUS DISERAHKAN:</span>
-                  <span className="amount-primary">
-                    {formatCurrency((setoranData.grossAmount - (setoranData.taxAmount || 0)))}
-                  </span>
+                  <span className="amount-primary">{formatCurrency(setoranData.netSetoranAmount)}</span>
                 </div>
               </div>
 
@@ -135,68 +160,50 @@ export function JukirSetoran() {
           ) : (
             <div className="no-data">
               <p>Data setoran belum tersedia.</p>
-              <button 
-                className="btn btn-primary mt-4" 
-                onClick={fetchSetoran}
-              >
-                Refresh Data
-              </button>
+              <button className="btn btn-primary mt-4" onClick={fetchSetoran}>Refresh Data</button>
             </div>
           )}
         </div>
 
-        {/* Right Column - Breakdown */}
         <div className="card">
           <h2><BarChart3 className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Rincian Per Jenis Kendaraan</h2>
           <div className="breakdown-list">
-            <div className="breakdown-item">
-              <div className="breakdown-header">
-                <span className="type-label">Motorcycle</span>
-                <span className="count">X vehicles</span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-bar progress-motor"></div>
-              </div>
-              <div className="breakdown-footer">
-                <span className="amount">Rp 85,000</span>
-                <span className="percentage">57%</span>
-              </div>
-            </div>
-
-            <div className="breakdown-item">
-              <div className="breakdown-header">
-                <span className="type-label">Car</span>
-                <span className="count">X vehicles</span>
-              </div>
-              <div className="progress-track">
-                <div className="progress-bar progress-car"></div>
-              </div>
-              <div className="breakdown-footer">
-                <span className="amount">Rp 65,000</span>
-                <span className="percentage">43%</span>
-              </div>
-            </div>
+            {(setoranData?.breakdown ?? []).length > 0 ? (
+              (setoranData?.breakdown ?? []).map((item) => {
+                const percentage = totalBreakdown > 0 ? Math.round((item.amount / totalBreakdown) * 100) : 0;
+                return (
+                  <div className="breakdown-item" key={item.vehicleType}>
+                    <div className="breakdown-header">
+                      <span className="type-label">{item.vehicleType === "car" ? "Car" : "Motorcycle"}</span>
+                      <span className="count">{item.count} kendaraan</span>
+                    </div>
+                    <div className="progress-track">
+                      <div className={`progress-bar ${item.vehicleType === "car" ? "progress-car" : "progress-motor"}`} style={{ width: `${percentage}%` }}></div>
+                    </div>
+                    <div className="breakdown-footer">
+                      <span className="amount">{formatCurrency(item.amount)}</span>
+                      <span className="percentage">{percentage}%</span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-muted">Belum ada transaksi completed hari ini.</div>
+            )}
           </div>
 
           <div className="mt-6">
-            <button 
-              className="btn btn-primary w-100"
-              onClick={() => alert("Fitur submit setoran akan segera hadir")}
-            >
-              <Upload size={16} strokeWidth={2} aria-hidden="true" /> Submit Setoran
+            <button className="btn btn-primary w-100" onClick={submitSetoran} disabled={submitting || !setoranData || setoranData.status !== "PENDING"}>
+              <Upload size={16} strokeWidth={2} aria-hidden="true" /> {submitting ? "Submitting..." : "Submit Setoran"}
             </button>
-            
-            <button 
-              className="btn btn-outline w-100 mt-3"
-              onClick={() => window.print()}
-            >
+
+            <button className="btn btn-outline w-100 mt-3" onClick={() => window.print()}>
               <Printer size={16} strokeWidth={2} aria-hidden="true" /> Export PDF
             </button>
           </div>
         </div>
       </div>
 
-      {/* History Section */}
       <div className="card mt-6">
         <h2><ClipboardList className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Riwayat Setoran</h2>
         <table className="table table-striped">
@@ -205,9 +212,9 @@ export function JukirSetoran() {
               <th>Tanggal</th>
               <th>Total Transaksi</th>
               <th>Gross Amount</th>
-              <th>Jurik Share</th>
+              <th>Pajak</th>
+              <th>Net Setoran</th>
               <th>Status</th>
-              <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
@@ -217,11 +224,9 @@ export function JukirSetoran() {
                   <td>{new Date(item.date).toLocaleDateString("id-ID")}</td>
                   <td>{item.totalTransactions}</td>
                   <td>{formatCurrency(item.grossAmount)}</td>
-                  <td>{formatCurrency(item.jukirShareAmount || 0)}</td>
+                  <td>{formatCurrency(item.taxAmount || 0)}</td>
+                  <td>{formatCurrency(Math.max(0, item.grossAmount - (item.taxAmount || 0)))}</td>
                   <td>{getStatusBadge(item.status)}</td>
-                  <td>
-                    <button className="btn btn-sm btn-outline">Detail</button>
-                  </td>
                 </tr>
               ))
             ) : (

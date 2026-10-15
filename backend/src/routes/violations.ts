@@ -6,11 +6,14 @@ import { upload, detectFile, type Detection } from "../lib/ai.js";
 
 export const violationsRouter = Router();
 
-// Pilih deteksi illegal-parking dengan confidence tertinggi.
-function pickIllegal(dets: Detection[]): Detection | null {
-  const illegal = dets.filter((d) => d.class === "illegal-parking");
-  if (!illegal.length) return null;
-  return illegal.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+const HIGH_CONF = Number(process.env.VIOLATION_HIGH_CONF ?? 0.6);
+const REVIEW_CONF = Number(process.env.VIOLATION_REVIEW_CONF ?? 0.35);
+
+// Pilih deteksi parking_violation dengan confidence tertinggi.
+function pickViolation(dets: Detection[]): Detection | null {
+  const violations = dets.filter((d) => d.class === "parking_violation");
+  if (!violations.length) return null;
+  return violations.reduce((a, b) => (b.confidence > a.confidence ? b : a));
 }
 
 // POST /api/violations — user/jukir/admin upload foto/video; jalankan deteksi.
@@ -26,14 +29,21 @@ violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res,
     const note = typeof req.body.note === "string" && req.body.note.trim() ? req.body.note.trim() : null;
 
     const result = await detectFile(req.file.path, req.file.mimetype);
-    const illegal = pickIllegal(result.detections);
+    const violationDet = pickViolation(result.detections);
+
+    let violationType: "parking_violation" | "review" | "none" = "none";
+    if (violationDet) {
+      if (violationDet.confidence >= HIGH_CONF) violationType = "parking_violation";
+      else if (violationDet.confidence >= REVIEW_CONF) violationType = "review";
+      else violationType = "none";
+    }
 
     const violation = await prisma.violation.create({
       data: {
         photoPath: `/uploads/${req.file.filename}`,
         areaId,
-        violationType: illegal ? "illegal-parking" : "none",
-        confidence: illegal?.confidence ?? null,
+        violationType,
+        confidence: violationDet?.confidence ?? null,
         source,
         note,
         reportedById: req.user!.id,
@@ -44,7 +54,14 @@ violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res,
 
     res.status(201).json({
       success: true,
-      data: { violation, summary: result.summary, illegalDetected: !!illegal },
+      data: {
+        violation,
+        summary: result.summary,
+        decision: violationType,
+        violationDetected: violationType === "parking_violation",
+        needsReview: violationType === "review",
+        thresholds: { high: HIGH_CONF, review: REVIEW_CONF },
+      },
     });
   } catch (e) {
     next(e);

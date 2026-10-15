@@ -11,6 +11,8 @@ const createSchema = z.object({
   location: z.string().min(1),
   vehicleType: z.string().default("motorcycle"),
   capacity: z.number().int().positive(),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
 });
 
 const updateSchema = z.object({
@@ -18,6 +20,8 @@ const updateSchema = z.object({
   location: z.string().min(1).optional(),
   vehicleType: z.string().optional(),
   capacity: z.number().int().positive().optional(),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
   status: z.enum(["ACTIVE", "INACTIVE", "MAINTENANCE"]).optional(),
 });
 

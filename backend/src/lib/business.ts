@@ -110,14 +110,14 @@ export async function reconciliation() {
   return areas.map((area) => {
     const active = area.transactions.length;
     const lastDetection = area.detections[0];
-    const cvOccupied = lastDetection?.occupiedCount ?? 0;
-    const difference = cvOccupied - active;
+    const cvNormal = lastDetection?.normalCount ?? 0;
+    const difference = cvNormal - active;
     return {
       areaId: area.id,
       name: area.name,
       capacity: area.capacity,
       activeTransactions: active,
-      cvDetected: cvOccupied,
+      cvDetected: cvNormal,
       difference,
       // Tidak langsung menuduh; hanya early warning untuk pemeriksaan.
       needsReview: difference !== 0,

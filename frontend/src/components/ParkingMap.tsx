@@ -11,6 +11,17 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+const redLocationIcon = new L.Icon({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+  className: "parking-map-red-marker",
+});
+
 export interface MapArea {
   id: string;
   name: string;
@@ -59,7 +70,7 @@ export function ParkingMap({ areas, center, zoom = 17, height = 360 }: ParkingMa
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       {located.map((a) => (
-        <Marker key={a.id} position={[a.latitude, a.longitude]}>
+        <Marker key={a.id} position={[a.latitude, a.longitude]} icon={redLocationIcon}>
           <Popup>
             <strong>{a.name}</strong>
             <br />

@@ -1,7 +1,7 @@
 import { AlertTriangle, ClipboardList } from "lucide-react";
 import { ViolationForm } from "../ViolationForm";
 
-// Jenis pelanggaran murni ditentukan model AI (illegal-parking / none),
+// Jenis pelanggaran murni ditentukan model AI (parking_violation / none),
 // jukir hanya upload foto + area + keterangan opsional.
 export function JukirViolations() {
   return (

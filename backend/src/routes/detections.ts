@@ -21,17 +21,16 @@ detectionsRouter.post("/scan", requireAuth, requireAdmin, upload.single("photo")
     const result = await detectFile(req.file.path, req.file.mimetype);
 
     const count = (cls: string) => result.detections.filter((d: Detection) => d.class === cls).length;
-    const emptyCount = count("space-empty");
-    const occupiedCount = count("space-occupied");
-    const illegalCount = count("illegal-parking");
+    const violationCount = count("parking_violation");
+    const normalCount = count("parking_normal");
 
     const detection = await prisma.cvDetection.create({
-      data: { areaId, emptyCount, occupiedCount, illegalCount, source },
+      data: { areaId, violationCount, normalCount, source },
     });
 
-    // Bandingkan dengan transaksi aktif.
+    // Bandingkan pelanggaran dengan transaksi aktif sebagai early warning.
     const active = await prisma.transaction.count({ where: { areaId, status: "ACTIVE" } });
-    const difference = occupiedCount - active;
+    const hasViolation = violationCount > 0;
 
     res.json({
       success: true,
@@ -40,9 +39,9 @@ detectionsRouter.post("/scan", requireAuth, requireAdmin, upload.single("photo")
         summary: result.summary,
         detection,
         activeTransactions: active,
-        cvDetected: occupiedCount,
-        difference,
-        needsReview: difference !== 0,
+        violationsDetected: violationCount,
+        normalSpots: normalCount,
+        hasViolation,
       },
     });
   } catch (e) {

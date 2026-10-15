@@ -7,11 +7,11 @@ interface Area {
 }
 interface ScanResult {
   photoPath: string;
-  summary: { empty: number; occupied: number; illegal: number };
+  summary: { violation: number; normal: number };
   activeTransactions: number;
-  cvDetected: number;
-  difference: number;
-  needsReview: boolean;
+  violationsDetected: number;
+  normalSpots: number;
+  hasViolation: boolean;
 }
 
 export function AreaScan() {
@@ -53,8 +53,8 @@ export function AreaScan() {
       <div className="page-header">Pindai Area (Computer Vision)</div>
       <div className="card" style={{ maxWidth: 480 }}>
         <p style={{ marginTop: 0, color: "var(--muted)" }}>
-          Unggah foto/video area. Model mendeteksi jumlah kendaraan (kosong/terisi/ilegal)
-          lalu membandingkannya dengan transaksi aktif.
+          Unggah foto/video area. Model mendeteksi parkir normal dan pelanggaran
+          sebagai early warning.
         </p>
         <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
           <select value={areaId} onChange={(e) => setAreaId(e.target.value)}>
@@ -73,20 +73,19 @@ export function AreaScan() {
       {result && (
         <div className="card" style={{ marginTop: 16, maxWidth: 480 }}>
           <p style={{ marginTop: 0 }}>
-            Terdeteksi — kosong: <strong>{result.summary.empty}</strong>, terisi:{" "}
-            <strong>{result.summary.occupied}</strong>, ilegal: <strong>{result.summary.illegal}</strong>.
+            Terdeteksi — normal: <strong>{result.summary.normal}</strong>, pelanggaran:{" "}
+            <strong>{result.summary.violation}</strong>.
           </p>
           <p>
-            Transaksi aktif: <strong>{result.activeTransactions}</strong> · CV terdeteksi:{" "}
-            <strong>{result.cvDetected}</strong> · Selisih: <strong>{result.difference}</strong>
+            Transaksi aktif: <strong>{result.activeTransactions}</strong> · Spot normal: <strong>{result.normalSpots}</strong> · Pelanggaran: <strong>{result.violationsDetected}</strong>
           </p>
-          {result.needsReview ? (
+          {result.hasViolation ? (
             <div className="badge badge-warning" style={{ display: "inline-block" }}>
-              Ditemukan ketidaksesuaian — perlu pemeriksaan.
+              Pelanggaran terdeteksi — perlu pemeriksaan.
             </div>
           ) : (
             <div className="badge badge-success" style={{ display: "inline-block" }}>
-              Data sesuai.
+              Tidak ada pelanggaran terdeteksi.
             </div>
           )}
           <img src={result.photoPath} alt="scan" style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }} />

@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
 export function notFound(_req: Request, res: Response) {
@@ -15,6 +16,23 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
       details: err.flatten(),
     });
   }
+
+  if (err instanceof Prisma.PrismaClientInitializationError) {
+    return res.status(503).json({
+      success: false,
+      message: "Database belum siap atau tidak dapat diakses",
+      code: "DB_UNAVAILABLE",
+    });
+  }
+
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P1001") {
+    return res.status(503).json({
+      success: false,
+      message: "Koneksi database gagal. Pastikan PostgreSQL aktif.",
+      code: "DB_CONNECTION_FAILED",
+    });
+  }
+
   console.error(err);
   res.status(500).json({ success: false, message: "Server error", code: "SERVER_ERROR" });
 }

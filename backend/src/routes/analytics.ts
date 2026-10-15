@@ -1,31 +1,38 @@
 import { Router } from "express";
-import { exec } from "child_process";
-import { promisify } from "util";
 import path from "path";
 import fs from "fs";
 import { prisma } from "../prisma.js";
 import { requireAdmin, requireJukirOrAdmin } from "../middleware/auth.js";
 import { runForecast, getLastForecastInfo } from "../services/scheduler.js";
+import { spawnPythonScript } from "../lib/python.js";
 
-const execAsync = promisify(exec);
 const analyticsRouter = Router();
 
 // Helper: trigger Python script asynchronously
 async function triggerPythonScript(scriptName: string): Promise<{ jobId: string; status: string }> {
   const jobId = `job_${Date.now()}`;
-  const scriptPath = path.join(process.cwd(), "../scripts", scriptName);
 
-  // Check if script exists
-  if (!fs.existsSync(scriptPath)) {
-    throw new Error(`Script not found: ${scriptName}`);
-  }
+  // Execute async (don't wait for completion), but fail fast if process can't be spawned.
+  const launched = await spawnPythonScript(scriptName, { stdio: "pipe" });
+  const child = launched.child;
 
-  // Execute async (don't wait for completion)
-  execAsync(`python "${scriptPath}"`, {
-    cwd: path.join(process.cwd(), "../scripts"),
-    timeout: 900000, // 15 minutes
-  }).catch((err) => {
-    console.error(`[${jobId}] Script ${scriptName} failed:`, err);
+  child.stdout?.on("data", (chunk) => {
+    const msg = String(chunk).trim();
+    if (msg) console.log(`[${jobId}] ${scriptName} stdout: ${msg}`);
+  });
+  child.stderr?.on("data", (chunk) => {
+    const msg = String(chunk).trim();
+    if (msg) console.error(`[${jobId}] ${scriptName} stderr: ${msg}`);
+  });
+  child.on("error", (err) => {
+    console.error(`[${jobId}] Script ${scriptName} spawn error:`, err);
+  });
+  child.on("close", (code) => {
+    if (code !== 0) {
+      console.error(`[${jobId}] Script ${scriptName} exited with code ${code}`);
+      return;
+    }
+    console.log(`[${jobId}] Script ${scriptName} finished successfully`);
   });
 
   return {
@@ -36,11 +43,11 @@ async function triggerPythonScript(scriptName: string): Promise<{ jobId: string;
 
 // ==========================================
 // POST /api/analytics/forecast
-// Trigger SARIMA revenue forecast
+// Trigger modern revenue forecast (XGBoost vs Prophet)
 // ==========================================
 analyticsRouter.post("/forecast", requireAdmin, async (req, res, next) => {
   try {
-    const result = await triggerPythonScript("forecast_revenue_sarima.py");
+    const result = await triggerPythonScript("forecast_revenue_modern.py");
 
     res.status(202).json({
       success: true,
@@ -48,7 +55,7 @@ analyticsRouter.post("/forecast", requireAdmin, async (req, res, next) => {
       data: {
         jobId: result.jobId,
         status: result.status,
-        description: "Forecast results will be saved to forecast_revenue_3months.json",
+        description: "Forecast results (model compare + selected model) saved to forecast_revenue_3months.json",
       },
     });
   } catch (e) {
@@ -58,11 +65,11 @@ analyticsRouter.post("/forecast", requireAdmin, async (req, res, next) => {
 
 // ==========================================
 // POST /api/analytics/segmentation
-// Trigger GMM jukir segmentation
+// Trigger modern jukir segmentation (GMM vs HDBSCAN)
 // ==========================================
 analyticsRouter.post("/segmentation", requireAdmin, async (req, res, next) => {
   try {
-    const result = await triggerPythonScript("segment_jukir_gmm.py");
+    const result = await triggerPythonScript("segment_jukir_modern.py");
 
     res.status(202).json({
       success: true,
@@ -70,7 +77,7 @@ analyticsRouter.post("/segmentation", requireAdmin, async (req, res, next) => {
       data: {
         jobId: result.jobId,
         status: result.status,
-        description: "Results saved to JukirCluster table and jukir_clusters.json",
+        description: "Results saved to JukirCluster table + model comparison in jukir_clusters.json",
       },
     });
   } catch (e) {
@@ -146,6 +153,30 @@ analyticsRouter.get("/segmentation/latest", requireAdmin, async (req, res, next)
       orderBy: [{ clusterLabel: "asc" }, { dailyEarnings: "desc" }],
     });
 
+    // Try to enrich with model metadata from script output (if available)
+    const modelInfoPath = path.join(process.cwd(), "../scripts/jukir_clusters.json");
+    let modelMeta: {
+      selectedModel?: string;
+      silhouetteGmm?: number | null;
+      silhouetteHdbscan?: number | null;
+      noiseCount?: number | null;
+    } = {};
+    if (fs.existsSync(modelInfoPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(modelInfoPath, "utf-8"));
+        modelMeta = {
+          selectedModel: parsed.selected_model,
+          silhouetteGmm: parsed.model_comparison?.gmm?.silhouette ?? null,
+          silhouetteHdbscan: parsed.model_comparison?.hdbscan?.silhouette ?? null,
+          noiseCount:
+            parsed.model_comparison?.hdbscan?.noise_count ??
+            clusters.filter((c) => c.clusterLabel === -1).length,
+        };
+      } catch {
+        // ignore malformed optional metadata
+      }
+    }
+
     // Group by cluster
     const clusterGroups: Record<number, typeof clusters> = {};
     for (const cluster of clusters) {
@@ -196,6 +227,12 @@ analyticsRouter.get("/segmentation/latest", requireAdmin, async (req, res, next)
         totalJukir: clusters.length,
         clusters: clusterGroups,
         clusterStatistics: clusterStats,
+        selectedModel: modelMeta.selectedModel ?? "gmm",
+        silhouette: {
+          gmm: modelMeta.silhouetteGmm ?? null,
+          hdbscan: modelMeta.silhouetteHdbscan ?? null,
+        },
+        noiseCount: modelMeta.noiseCount ?? clusters.filter((c) => c.clusterLabel === -1).length,
       },
     });
   } catch (e) {
@@ -223,7 +260,7 @@ analyticsRouter.get("/segmentation/me", requireJukirOrAdmin, async (req, res, ne
       });
     }
 
-    const rows = await prisma.jukirCluster.findMany({
+      const rows = await prisma.jukirCluster.findMany({
       where: { analyzedTo: latestAnalysis.analyzedTo },
       include: { jukir: { select: { id: true, name: true } } }, // email sengaja tidak diambil
       orderBy: [{ clusterLabel: "asc" }, { dailyEarnings: "desc" }],
@@ -238,7 +275,27 @@ analyticsRouter.get("/segmentation/me", requireJukirOrAdmin, async (req, res, ne
       dailyEarnings: r.dailyEarnings,
       workConsistency: r.workConsistency,
       punctualityPercent: r.punctualityPercent,
+      isNoise: r.clusterLabel === -1,
     }));
+
+    const modelInfoPath = path.join(process.cwd(), "../scripts/jukir_clusters.json");
+    let selectedModel = "gmm";
+    let silhouette: { gmm: number | null; hdbscan: number | null } = {
+      gmm: null,
+      hdbscan: null,
+    };
+    if (fs.existsSync(modelInfoPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(modelInfoPath, "utf-8"));
+        selectedModel = parsed.selected_model ?? selectedModel;
+        silhouette = {
+          gmm: parsed.model_comparison?.gmm?.silhouette ?? null,
+          hdbscan: parsed.model_comparison?.hdbscan?.silhouette ?? null,
+        };
+      } catch {
+        // ignore malformed optional metadata
+      }
+    }
 
     // Statistik rata-rata per cluster
     const clusterStatistics: Record<
@@ -281,6 +338,9 @@ analyticsRouter.get("/segmentation/me", requireJukirOrAdmin, async (req, res, ne
         totalJukir: members.length,
         members,
         clusterStatistics,
+        selectedModel,
+        silhouette,
+        noiseCount: members.filter((m) => m.clusterLabel === -1).length,
         me: myRow ? { ...myRow, rank: myRank, clusterSize: myClusterSize } : null,
       },
     });
@@ -291,7 +351,7 @@ analyticsRouter.get("/segmentation/me", requireJukirOrAdmin, async (req, res, ne
 
 // ==========================================
 // GET /api/analytics/segmentation/model-info
-// BIC scores + jumlah cluster optimal (dibaca dari output script GMM).
+// Model metadata untuk segmentasi (GMM/HDBSCAN compare).
 // HARUS sebelum /segmentation/:date.
 // ==========================================
 analyticsRouter.get("/segmentation/model-info", requireJukirOrAdmin, async (_req, res, next) => {
@@ -313,8 +373,14 @@ analyticsRouter.get("/segmentation/model-info", requireJukirOrAdmin, async (_req
       data: {
         analyzedDate: parsed.analyzed_date ?? null,
         analysisWindowDays: parsed.analysis_window_days ?? null,
-        optimalClusters: parsed.optimal_clusters ?? null,
-        bicScores: parsed.bic_scores ?? {},
+        selectedModel: parsed.selected_model ?? null,
+        optimalClusters: parsed.model_comparison?.gmm?.optimal_clusters ?? parsed.optimal_clusters ?? null,
+        bicScores: parsed.model_comparison?.gmm?.bic_scores ?? parsed.bic_scores ?? {},
+        silhouette: {
+          gmm: parsed.model_comparison?.gmm?.silhouette ?? null,
+          hdbscan: parsed.model_comparison?.hdbscan?.silhouette ?? null,
+        },
+        noiseCount: parsed.model_comparison?.hdbscan?.noise_count ?? null,
       },
     });
   } catch (e) {
@@ -470,9 +536,9 @@ analyticsRouter.get("/status", requireAdmin, async (req, res, next) => {
     const forecastPath = path.join(process.cwd(), "../scripts/forecast_revenue_3months.json");
     const forecastExists = fs.existsSync(forecastPath);
 
-    // Check if BIC analysis exists
-    const bicPath = path.join(process.cwd(), "../scripts/bic_analysis.png");
-    const bicExists = fs.existsSync(bicPath);
+    // Check if model metadata exists
+    const modelInfoPath = path.join(process.cwd(), "../scripts/jukir_clusters.json");
+    const modelInfoExists = fs.existsSync(modelInfoPath);
 
     // Get scheduler info
     const schedulerInfo = await getLastForecastInfo();
@@ -493,9 +559,9 @@ analyticsRouter.get("/status", requireAdmin, async (req, res, next) => {
           exists: forecastExists,
           status: forecastExists ? "Ready" : "Not Generated",
         },
-        bicAnalysis: {
-          exists: bicExists,
-          status: bicExists ? "Ready" : "Not Generated",
+        modelInfo: {
+          exists: modelInfoExists,
+          status: modelInfoExists ? "Ready" : "Not Generated",
         },
         scheduler: {
           status: "RUNNING",
@@ -504,6 +570,69 @@ analyticsRouter.get("/status", requireAdmin, async (req, res, next) => {
           nextScheduled: schedulerInfo.nextScheduled,
           mode: "Manual + Scheduled (Last day of month at 23:00 UTC)",
         },
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ==========================================
+// GET /api/analytics/shift-revenue
+// Pendapatan per tanggal untuk shift PAGI vs SORE + garis rata-rata gabungan
+// ==========================================
+analyticsRouter.get("/shift-revenue", requireAdmin, async (req, res, next) => {
+  try {
+    const days = Math.min(Math.max(Number.parseInt(String(req.query.days ?? "90"), 10) || 90, 7), 365);
+    const granularity = String(req.query.granularity ?? "daily") === "weekly" ? "weekly" : "daily";
+    const bucketExpr = granularity === "weekly" ? `DATE_TRUNC('week', t."checkIn")::date` : `DATE(t."checkIn")`;
+
+    const rows = await prisma.$queryRawUnsafe<
+      { bucket: Date; shift: "PAGI" | "SORE"; total: bigint }[]
+    >(
+      `
+      SELECT
+        ${bucketExpr} as bucket,
+        a."shift" as shift,
+        SUM(COALESCE(t."amount", 0))::bigint as total
+      FROM "transaction" t
+      JOIN "Attendance" a
+        ON a."jukirId" = t."jukirId"
+       AND a."date" = DATE(t."checkIn")
+      WHERE t."status" = 'COMPLETED'
+        AND t."amount" IS NOT NULL
+        AND t."checkIn" >= NOW() - ($1 || ' days')::interval
+      GROUP BY bucket, a."shift"
+      ORDER BY bucket ASC
+      `,
+      String(days),
+    );
+
+    const byBucket = new Map<string, { pagi: number; sore: number }>();
+    for (const r of rows) {
+      const key = new Date(r.bucket).toISOString().slice(0, 10);
+      if (!byBucket.has(key)) byBucket.set(key, { pagi: 0, sore: 0 });
+      const cur = byBucket.get(key)!;
+      if (r.shift === "PAGI") cur.pagi = Number(r.total);
+      if (r.shift === "SORE") cur.sore = Number(r.total);
+    }
+
+    const series = Array.from(byBucket.entries())
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([date, v]) => ({ date, pagi: v.pagi, sore: v.sore, total: v.pagi + v.sore }));
+
+    const overallAverage =
+      series.length > 0
+        ? series.reduce((sum, s) => sum + s.total, 0) / series.length
+        : 0;
+
+    res.json({
+      success: true,
+      data: {
+        days,
+        granularity,
+        overallAverage,
+        series,
       },
     });
   } catch (e) {

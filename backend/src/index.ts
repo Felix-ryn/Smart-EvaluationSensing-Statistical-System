@@ -33,7 +33,9 @@ app.use("/api/transactions", transactionsRouter);
 // requireAdmin dipindah ke level route (GET /) agar /dashboard/trend
 // tetap bisa diakses role USER & JUKIR. Trend hanya berisi jumlah kendaraan.
 app.use("/api/dashboard", requireAuth, dashboardRouter);
-app.use("/api/jukir", jukirRouter);
+// requireAuth WAJIB untuk seluruh endpoint jukir karena guard di dalam router
+// (requireAdmin/requireJukir/requireJukirOrAdmin) membaca req.user.
+app.use("/api/jukir", requireAuth, jukirRouter);
 app.use("/api/mou", mouRouter);
 app.use("/api/users", requireAuth, requireAdmin, usersRouter);
 app.use("/api/reports", requireAuth, requireAdmin, reportsRouter);
