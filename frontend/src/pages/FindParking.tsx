@@ -1,24 +1,29 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { ParkingMap } from "../components/ParkingMap";
 
-interface Location {
+interface Area {
   id: string;
   name: string;
-  address: string;
-  totalSlots: number;
-  availableSlots: number;
+  location: string;
+  vehicleType: string;
+  capacity: number;
+  available: number;
+  activeVehicles: number;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export function FindParking() {
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api
-      .get("/parking")
-      .then(({ data }) => setLocations(data.data))
+      .get("/areas")
+      .then(({ data }) => setAreas(data.data))
       .catch((err) => setError(err.response?.data?.message ?? "Failed to load"))
       .finally(() => setLoading(false));
   }, []);
@@ -29,14 +34,20 @@ export function FindParking() {
   return (
     <div>
       <h1>Find Parking</h1>
-      {locations.length === 0 && <p>No parking locations available.</p>}
+      {areas.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <ParkingMap areas={areas} />
+        </div>
+      )}
+      {areas.length === 0 && <p>Belum ada area parkir tersedia.</p>}
       <div style={{ display: "grid", gap: 12 }}>
-        {locations.map((loc) => (
-          <div key={loc.id} style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16 }}>
-            <h3 style={{ margin: 0 }}>{loc.name}</h3>
-            <p style={{ margin: "4px 0", color: "#666" }}>{loc.address}</p>
+        {areas.map((a) => (
+          <div key={a.id} style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16 }}>
+            <h3 style={{ margin: 0 }}>{a.name}</h3>
+            <p style={{ margin: "4px 0", color: "#666" }}>{a.location}</p>
             <p style={{ margin: 0 }}>
-              <strong>{loc.availableSlots}</strong> / {loc.totalSlots} slot tersedia
+              Tersedia <strong>{a.available}</strong> dari {a.capacity} kapasitas{" "}
+              ({a.vehicleType === "motorcycle" ? "motor" : "mobil"})
             </p>
           </div>
         ))}

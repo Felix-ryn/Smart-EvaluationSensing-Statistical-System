@@ -6,32 +6,46 @@ import { upload, detectFile, type Detection } from "../lib/ai.js";
 
 export const violationsRouter = Router();
 
-// Pick the most-confident illegal-parking detection to headline the report.
-function pickIllegal(dets: Detection[]): Detection | null {
-  const illegal = dets.filter((d) => d.class === "illegal-parking");
-  if (!illegal.length) return null;
-  return illegal.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+const HIGH_CONF = Number(process.env.VIOLATION_HIGH_CONF ?? 0.6);
+const REVIEW_CONF = Number(process.env.VIOLATION_REVIEW_CONF ?? 0.35);
+
+// Pilih deteksi parking_violation dengan confidence tertinggi.
+function pickViolation(dets: Detection[]): Detection | null {
+  const violations = dets.filter((d) => d.class === "parking_violation");
+  if (!violations.length) return null;
+  return violations.reduce((a, b) => (b.confidence > a.confidence ? b : a));
 }
 
-// POST /api/violations — user or admin uploads a photo/video; runs detection.
+// POST /api/violations — user/jukir/admin upload foto/video; jalankan deteksi.
 violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: "Foto wajib diunggah", code: "NO_FILE" });
     }
-    const locationId = typeof req.body.locationId === "string" && req.body.locationId ? req.body.locationId : null;
-    const slotCode = typeof req.body.slotCode === "string" && req.body.slotCode ? req.body.slotCode : null;
+    const areaId = typeof req.body.areaId === "string" && req.body.areaId ? req.body.areaId : null;
+    const source = (["USER", "JUKIR", "CCTV"] as const).includes(req.body.source)
+      ? (req.body.source as "USER" | "JUKIR" | "CCTV")
+      : "USER";
+    const note = typeof req.body.note === "string" && req.body.note.trim() ? req.body.note.trim() : null;
 
     const result = await detectFile(req.file.path, req.file.mimetype);
-    const illegal = pickIllegal(result.detections);
+    const violationDet = pickViolation(result.detections);
+
+    let violationType: "parking_violation" | "review" | "none" = "none";
+    if (violationDet) {
+      if (violationDet.confidence >= HIGH_CONF) violationType = "parking_violation";
+      else if (violationDet.confidence >= REVIEW_CONF) violationType = "review";
+      else violationType = "none";
+    }
 
     const violation = await prisma.violation.create({
       data: {
         photoPath: `/uploads/${req.file.filename}`,
-        locationId,
-        slotCode,
-        violationType: illegal ? "illegal-parking" : "none",
-        confidence: illegal?.confidence ?? null,
+        areaId,
+        violationType,
+        confidence: violationDet?.confidence ?? null,
+        source,
+        note,
         reportedById: req.user!.id,
         reporterRole: req.user!.role,
         detections: result as object,
@@ -40,14 +54,21 @@ violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res,
 
     res.status(201).json({
       success: true,
-      data: { violation, summary: result.summary, illegalDetected: !!illegal },
+      data: {
+        violation,
+        summary: result.summary,
+        decision: violationType,
+        violationDetected: violationType === "parking_violation",
+        needsReview: violationType === "review",
+        thresholds: { high: HIGH_CONF, review: REVIEW_CONF },
+      },
     });
   } catch (e) {
     next(e);
   }
 });
 
-// GET /api/violations/mine — reporter's own submissions.
+// GET /api/violations/mine — laporan milik reporter.
 violationsRouter.get("/mine", requireAuth, async (req, res, next) => {
   try {
     const data = await prisma.violation.findMany({
@@ -60,13 +81,13 @@ violationsRouter.get("/mine", requireAuth, async (req, res, next) => {
   }
 });
 
-// GET /api/violations — admin sees all reports.
+// GET /api/violations — admin melihat semua laporan.
 violationsRouter.get("/", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const data = await prisma.violation.findMany({
       orderBy: { createdAt: "desc" },
       include: {
-        location: { select: { name: true } },
+        area: { select: { name: true } },
         reportedBy: { select: { name: true, email: true } },
       },
     });
@@ -77,11 +98,11 @@ violationsRouter.get("/", requireAuth, requireAdmin, async (_req, res, next) => 
 });
 
 const statusSchema = z.object({
-  status: z.enum(["PENDING", "REVIEWED", "DISMISSED"]),
+  status: z.enum(["PENDING", "VALID", "REJECTED"]),
   adminNote: z.string().optional(),
 });
 
-// PATCH /api/violations/:id/status — admin review action.
+// PATCH /api/violations/:id/status — admin verifikasi (valid/rejected).
 violationsRouter.patch("/:id/status", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { status, adminNote } = statusSchema.parse(req.body);

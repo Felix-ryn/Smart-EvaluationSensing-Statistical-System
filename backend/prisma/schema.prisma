@@ -1,6 +1,6 @@
-// SESS Parking — Prisma schema
-// ponytail: PostGIS geometry (slot polygon) not modeled here; Prisma lacks native geometry.
-//   add when Phase 5: use Unsupported("geometry") + raw SQL for spatial queries.
+// Smart Parking System — Prisma schema (Area/Zone based)
+// Konsep baru: parkir berbasis Area + kapasitas (bukan slot fisik per kendaraan).
+// PostGIS tetap dipertahankan sebagai extension (tidak dipakai untuk polygon slot).
 
 generator client {
   provider        = "prisma-client-js"
@@ -15,6 +15,7 @@ datasource db {
 
 enum Role {
   ADMIN
+  JUKIR
   USER
 }
 
@@ -23,170 +24,272 @@ enum UserStatus {
   BLOCKED
 }
 
-enum SlotStatus {
-  AVAILABLE
-  OCCUPIED
-  MAINTENANCE
-}
-
-enum LocationStatus {
+enum AreaStatus {
   ACTIVE
   INACTIVE
   MAINTENANCE
 }
 
-enum SessionStatus {
+enum TransactionStatus {
   ACTIVE
   COMPLETED
   CANCELLED
 }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
+enum PaymentMethod {
+  CASH
+  QRIS
 }
 
 enum ViolationStatus {
   PENDING
-  REVIEWED
-  DISMISSED
+  VALID
+  REJECTED
+}
+
+enum JukirStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// Sumber laporan pelanggaran (sesuai konsep: User / Jukir / CCTV)
+enum ViolationSource {
+  USER
+  JUKIR
+  CCTV
+}
+
+enum Shift {
+  PAGI
+  SORE
 }
 
 model User {
-  id           String    @id @default(uuid())
+  id           String     @id @default(uuid())
   name         String
-  email        String    @unique
+  email        String     @unique
   passwordHash String
-  role         Role      @default(USER)
+  role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  
+  // Jukir-specific fields (only populated if role = JUKIR)
+  areaId       String?    // Assigned area for Jukir
+  
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  vehicles      Vehicle[]
-  sessions      ParkingSession[]
-  payments      Payment[]
-  notifications Notification[]
-  violations    Violation[]
+  transactionsAsJukir      Transaction[] @relation("TransactionJukir")
+  transactionsAsCustomer   Transaction[] @relation("TransactionCustomer")
+  violations               Violation[]
+  areaJurik                ParkingArea? @relation("AreaJukirs", fields: [areaId], references: [id])
+  setoranEntries           SetoranEntry[] @relation("SetoranJukir")
+  approvedSetoran          SetoranEntry[] @relation("SetoranApprovedBy")
+  attendances              Attendance[] @relation("AttendanceJukir")
+  clusterAssignments       JukirCluster[] @relation("JukirClusterAssignment")
 }
 
-model Vehicle {
-  id          String   @id @default(uuid())
-  userId      String
-  plateNumber String
-  vehicleType String
-  brand       String?
-  model       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model ParkingArea {
+  id          String     @id @default(uuid())
+  name        String
+  location    String // alamat / nama jalan area parkir
+  latitude    Float? // koordinat untuk peta
+  longitude   Float?
+  vehicleType String     @default("motorcycle") // "motorcycle" | "car"
+  capacity    Int // kapasitas ditentukan admin berdasarkan lapangan
+  status      AreaStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessions ParkingSession[]
+  jukirs       User[]         @relation("AreaJukirs")
+  transactions Transaction[]
+  detections   CvDetection[]
+  violations   Violation[]
+  setoranEntries SetoranEntry[] @relation("SetoranArea")
 }
 
-model ParkingLocation {
-  id             String         @id @default(uuid())
-  name           String
-  address        String
-  latitude       Float
-  longitude      Float
-  description    String?
-  operatingStart String? // "HH:mm"
-  operatingEnd   String?
-  status         LocationStatus @default(ACTIVE)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
 
-  slots    ParkingSlot[]
-  sessions ParkingSession[]
-  violations Violation[]
-}
+// Remove separate Jukir model - Jurik data now stored in User table with role=JUkIr + areaId
+// Jukir fields are: role = 'JUkIR' and assigned areaId through User model
 
-model ParkingSlot {
-  id         String     @id @default(uuid())
-  locationId String
-  slotCode   String
-  slotType   String     @default("car")
-  status     SlotStatus @default(AVAILABLE)
-  latitude   Float?
-  longitude  Float?
-  updatedAt  DateTime   @updatedAt
-
-  location ParkingLocation  @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  sessions ParkingSession[]
-  events   ParkingEvent[]
-
-  @@unique([locationId, slotCode])
-}
-
-model ParkingSession {
-  id              String        @id @default(uuid())
-  userId          String
-  vehicleId       String?
-  locationId      String
-  slotId          String?
-  checkIn         DateTime      @default(now())
+// Transaksi parkir masuk/keluar. QR merujuk ke transactionCode (bukan plat).
+model Transaction {
+  id              String            @id @default(uuid()) @db.Uuid
+  transactionCode String            @unique // PARK-00001
+  areaId          String            @db.VarChar(255)
+  jukirId         String?           @db.VarChar(255)
+  vehicleType     String            @default("motorcycle") // "motorcycle" | "car"
+  plateNumber     String?           // plat nomor kendaraan (opsional)
+  checkIn         DateTime          @default(now())
   checkOut        DateTime?
   durationMinutes Int?
-  totalFee        Int?
-  status          SessionStatus @default(ACTIVE)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  amount          Int? // tarif final setelah checkout
+  paymentMethod   PaymentMethod? // diisi saat bayar (CASH / QRIS)
+  paidAt          DateTime?
+  status          TransactionStatus @default(ACTIVE)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  user     User            @relation(fields: [userId], references: [id])
-  vehicle  Vehicle?        @relation(fields: [vehicleId], references: [id])
-  location ParkingLocation @relation(fields: [locationId], references: [id])
-  slot     ParkingSlot?    @relation(fields: [slotId], references: [id])
-  payment  Payment?
+  @@map("transaction")
+  
+  area    ParkingArea      @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  jukir   User?            @relation(fields: [jukirId], references: [id], onDelete: SetNull, name: "TransactionJukir")
+  customer User?           @relation(fields: [userId], references: [id], name: "TransactionCustomer")
+  userId  String?          @db.VarChar(255)
 }
 
-model Payment {
-  id            String        @id @default(uuid())
-  sessionId     String        @unique
-  userId        String
-  amount        Int
-  paymentMethod String
-  transactionId String?
-  status        PaymentStatus @default(PENDING)
-  paidAt        DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  session ParkingSession @relation(fields: [sessionId], references: [id])
-  user    User           @relation(fields: [userId], references: [id])
+// Aturan MOU / pajak / bagian pengelola + tarif parkir (configurable).
+model MouRule {
+  id              String    @id @default(uuid())
+  name            String
+  taxPercent      Float // persentase pajak / bagian pengelola dari revenue (%)
+  operatorPercent Float     @default(0) // opsional: bagian operator/pengelola lain (%)
+  jukirSharePercent Float   @default(15) // % bagian juru parkir dari revenue
+  
+  // === PARKING RATES FOR MOTORCYCLE ===
+  firstHour_motorcycle       Int       @default(2000)   // Rp 2.000 - jam pertama motor
+  nextHour_motorcycle        Int       @default(1000)   // Rp 1.000 - jam berikutnya motor
+  maximumDaily_motorcycle    Int       @default(10000)  // Rp 10.000 - max per hari motor
+  
+  // === PARKING RATES FOR CAR ===
+  firstHour_car             Int       @default(3000)    // Rp 3.000 - jam pertama mobil
+  nextHour_car              Int       @default(1500)    // Rp 1.500 - jam berikutnya mobil
+  maximumDaily_car          Int       @default(15000)   // Rp 15.000 - max per hari mobil
+  
+  validFrom       DateTime
+  validTo         DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String?
-  type      String
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+// Hasil deteksi Computer Vision per area (parking violation detection).
+model CvDetection {
+  id              String   @id @default(uuid())
+  areaId          String
+  detectedAt      DateTime @default(now())
+  violationCount  Int      @default(0)
+  normalCount     Int      @default(0)
+  source          String   @default("cctv") // "cctv" | "photo" | "video"
+  createdAt       DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id])
+  area ParkingArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
 }
 
-model ParkingEvent {
-  id         String   @id @default(uuid())
-  slotId     String
-  eventType  String
-  detectedAt DateTime @default(now())
-  source     String?
-  confidence Float?
-  metadata   Json?
+// Auto-calculated daily setoran/reporting untuk Jukir
+enum SetoranStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
 
-  slot ParkingSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+model SetoranEntry {
+  id              String         @id @default(uuid())
+  jukirId         String
+  areaId          String
+  date            DateTime       @default(now())
+  
+  totalTransactions Int          @default(0)  // Jumlah transaksi hari ini
+  grossAmount       Int          @default(0)  // Total pendapatan sebelum dipotong
+  
+  taxPercent        Float        @default(0)  // Pajak dari mou rule (%)
+  taxAmount         Int?                      // Pajak pengelola (amount)
+  
+  jukirSharePercent Float        @default(0)  // Persentase juru parkir dari mou rule
+  jukirShareAmount  Int?                      // Amount yang jatuh ke juru parkir
+  
+  status            SetoranStatus @default(PENDING)
+  approvedAt        DateTime?
+  approvedBy        String?  // Admin user ID who approved
+  adminNote         String?
+  
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  jukir          User         @relation("SetoranJukir", fields: [jukirId], references: [id], onDelete: Cascade)
+  area           ParkingArea  @relation("SetoranArea", fields: [areaId], references: [id], onDelete: Cascade)
+  approvedByUser User?        @relation("SetoranApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+  
+  @@index([jukirId, date])
+  @@index([areaId, date])
+  @@index([date])
+}
+
+// Kehadiran jukir - untuk tracking jam kerja dan ketepatan waktu
+model Attendance {
+  id           String   @id @default(uuid())
+  jukirId      String
+  date         DateTime @db.Date
+  shift        Shift    // PAGI (07:00) or SORE (13:00)
+  
+  // Jadwal masuk tetap (07:00 atau 13:00)
+  jadwalMasuk  String   // "07:00" or "13:00"
+  
+  // Realisasi waktu datang (jadwal ± 45 menit)
+  jamDatang    DateTime
+  
+  // Waktu pulang (4-8 jam setelah jamDatang)
+  jamPulang    DateTime
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  jukir        User     @relation("AttendanceJukir", fields: [jukirId], references: [id], onDelete: Cascade)
+  
+  @@unique([jukirId, date])
+  @@index([jukirId, date])
+  @@index([date])
+}
+
+// Hasil GMM clustering - cluster assignment per jukir
+model JukirCluster {
+  id                 String   @id @default(uuid())
+  jukirId            String
+  
+  // Hasil clustering
+  clusterLabel       Int      // 0, 1, 2, ... (cluster assignment)
+  gmmProbability     Float    // Confidence score (0-1)
+  
+  // Metrics yang digunakan untuk clustering
+  dailyEarnings      Float    // Rp juta per hari (average)
+  workConsistency    Float    // Std dev jam kerja harian
+  punctualityPercent Float    // On-time percentage (0-100)
+  
+  // Analysis window
+  analyzedFrom       DateTime @db.Date
+  analyzedTo         DateTime @db.Date
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  jukir              User     @relation("JukirClusterAssignment", fields: [jukirId], references: [id], onDelete: Cascade)
+  
+  @@unique([jukirId, analyzedTo])
+  @@index([clusterLabel, analyzedTo])
+}
+
+// Forecast validation & accuracy tracking
+model ForecastValidation {
+  id                   String   @id @default(uuid())
+  forecastMonth        DateTime @db.Date    // Month when forecast was run
+  actualRevenue        BigInt?              // Actual revenue for the period
+  forecastedRevenue    BigInt               // Forecasted revenue
+  mapePercent          Float?               // Mean Absolute Percentage Error
+  modelAccuracy        String?              // GOOD/ACCEPTABLE/POOR
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([forecastMonth])
+  @@index([createdAt])
 }
 
 model Violation {
   id            String          @id @default(uuid())
   photoPath     String // relative path served under /uploads
-  locationId    String?
-  slotCode      String? // best-effort mapped slot (e.g. "A3")
+  areaId        String?
   violationType String          @default("illegal-parking")
   confidence    Float?
+  source        ViolationSource @default(USER)
+  note          String? // catatan opsional dari pelapor (jukir/user)
   reportedById  String?
   reporterRole  Role            @default(USER)
   status        ViolationStatus @default(PENDING)
@@ -195,6 +298,6 @@ model Violation {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  location   ParkingLocation? @relation(fields: [locationId], references: [id])
-  reportedBy User?            @relation(fields: [reportedById], references: [id])
+  area       ParkingArea? @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  reportedBy User?        @relation(fields: [reportedById], references: [id], onDelete: SetNull)
 }

@@ -1,225 +1,238 @@
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
-import { calculateParkingFee } from "../src/lib/fee.js";
+import { calculateParkingFee, type ParkingRules } from "../src/lib/fee.js";
 
 const prisma = new PrismaClient();
 
-// Fee rules used to compute dummy completed-session totals.
-const RULES = { firstHour: 5000, nextHour: 3000, maximumDaily: 30000 };
+// Aturan tarif + MOU untuk seed (bisa diubah lewat UI nanti).
+const RULES: ParkingRules = { firstHour: 2000, nextHour: 1000, maximumDaily: 10000 };
+const TAX_PERCENT = 10; // % pajak / bagian pengelola
+const JUKIR_SHARE_PERCENT = 15; // % bagian juru parkir dari revenue
 
-// Deterministic date helpers so re-seeding gives stable, chart-friendly spread.
+// Helper tanggal deterministik agar re-seed stabil.
 const now = new Date();
-const daysAgo = (d: number, hour = 9) => {
+const daysAgo = (d: number, hour = 9, minute = 0) => {
   const dt = new Date(now);
   dt.setDate(dt.getDate() - d);
-  dt.setHours(hour, 0, 0, 0);
+  dt.setHours(hour, minute, 0, 0);
   return dt;
 };
 
 async function main() {
   const passwordHash = await bcrypt.hash("password123", 10);
 
+  // ---- Users (Admin, Jukir, User) ----
+  
+  // Admin user
   const admin = await prisma.user.upsert({
     where: { email: "admin@sess.local" },
     update: {},
-    create: { name: "Admin", email: "admin@sess.local", passwordHash, role: "ADMIN" },
+    create: { name: "Admin System", email: "admin@sess.local", passwordHash, role: "ADMIN" },
   });
-  const primaryUser = await prisma.user.upsert({
+  
+  // Customer/User pelanggan
+  const customer = await prisma.user.upsert({
     where: { email: "user@sess.local" },
     update: {},
-    create: { name: "User", email: "user@sess.local", passwordHash, role: "USER" },
+    create: { name: "Customer User", email: "user@sess.local", passwordHash, role: "USER" },
   });
-
-  // Extra dummy users; two BLOCKED to demo block/unblock action.
-  const dummyUsers = [
-    { name: "Budi Santoso", email: "budi@sess.local", status: "ACTIVE" as const },
-    { name: "Siti Rahayu", email: "siti@sess.local", status: "ACTIVE" as const },
-    { name: "Agus Wijaya", email: "agus@sess.local", status: "ACTIVE" as const },
-    { name: "Dewi Lestari", email: "dewi@sess.local", status: "BLOCKED" as const },
-    { name: "Eko Prasetyo", email: "eko@sess.local", status: "ACTIVE" as const },
-    { name: "Rina Marlina", email: "rina@sess.local", status: "BLOCKED" as const },
+  
+  // Jukir users (changed from separate Jukir model)
+  const jukirSpecs = [
+    { name: "Budi Santoso", areaId: "area-a", email: "jukir.budi@sess.local" },
+    { name: "Siti Rahayu", areaId: "area-a", email: "jukir.siti@sess.local" },
+    { name: "Agus Wijaya", areaId: "area-b", email: "jukir.agus@sess.local" },
+    { name: "Dewi Lestari", areaId: "area-c", email: "jukir.dewi@sess.local" },
   ];
-  const users = [primaryUser];
-  for (const u of dummyUsers) {
-    const user = await prisma.user.upsert({
-      where: { email: u.email },
-      update: {},
-      create: { name: u.name, email: u.email, passwordHash, role: "USER", status: u.status },
-    });
-    users.push(user);
-  }
-
-  // Vehicles for the first few users.
-  const vehicleSpecs = [
-    { userIdx: 0, plateNumber: "B 1234 ABC", vehicleType: "car", brand: "Toyota", model: "Avanza" },
-    { userIdx: 1, plateNumber: "B 5678 DEF", vehicleType: "car", brand: "Honda", model: "Brio" },
-    { userIdx: 2, plateNumber: "B 9012 GHI", vehicleType: "motorcycle", brand: "Yamaha", model: "NMAX" },
-    { userIdx: 3, plateNumber: "B 3456 JKL", vehicleType: "car", brand: "Suzuki", model: "Ertiga" },
-  ];
-  const vehicles: { id: string; userId: string }[] = [];
-  for (const v of vehicleSpecs) {
-    const user = users[v.userIdx];
-    // Idempotent-ish: skip if this user already has this plate.
-    const existing = await prisma.vehicle.findFirst({
-      where: { userId: user.id, plateNumber: v.plateNumber },
-    });
-    const vehicle =
-      existing ??
-      (await prisma.vehicle.create({
-        data: {
-          userId: user.id,
-          plateNumber: v.plateNumber,
-          vehicleType: v.vehicleType,
-          brand: v.brand,
-          model: v.model,
-        },
-      }));
-    vehicles.push({ id: vehicle.id, userId: user.id });
-  }
-
-  // Location 1 (existing) + slots.
-  const loc1 = await prisma.parkingLocation.upsert({
-    where: { id: "seed-loc-1" },
-    update: {},
-    create: {
-      id: "seed-loc-1",
-      name: "Parkir Pusat Kota",
-      address: "Jl. Merdeka No. 1",
-      latitude: -6.2,
-      longitude: 106.8166,
-      operatingStart: "06:00",
-      operatingEnd: "22:00",
-    },
-  });
-  for (let i = 1; i <= 6; i++) {
-    await prisma.parkingSlot.upsert({
-      where: { locationId_slotCode: { locationId: loc1.id, slotCode: `A${i}` } },
-      update: {},
-      create: {
-        locationId: loc1.id,
-        slotCode: `A${i}`,
-        status: i % 3 === 0 ? "OCCUPIED" : "AVAILABLE",
+  
+  const jukirs: { id: string; name: string; areaId: string }[] = [];
+  for (const j of jukirSpecs) {
+    const jukir = await prisma.user.upsert({
+      where: { email: j.email },
+      update: { role: "JUKIR" },
+      create: { 
+        name: j.name, 
+        email: j.email, 
+        passwordHash, 
+        role: "JUKIR", 
+        status: "ACTIVE"
       },
     });
+    jukirs.push({ id: jukir.id, name: jukir.name, areaId: j.areaId });
   }
 
-  // Location 2 (new) + 8 slots with mixed statuses.
-  const loc2 = await prisma.parkingLocation.upsert({
-    where: { id: "seed-loc-2" },
-    update: {},
-    create: {
-      id: "seed-loc-2",
-      name: "Parkir Mall Selatan",
-      address: "Jl. Sudirman No. 88",
-      latitude: -6.2245,
-      longitude: 106.8412,
-      operatingStart: "08:00",
-      operatingEnd: "23:00",
-    },
-  });
-  const loc2Statuses = ["AVAILABLE", "OCCUPIED", "OCCUPIED", "MAINTENANCE", "AVAILABLE", "AVAILABLE", "OCCUPIED", "AVAILABLE"] as const;
-  for (let i = 0; i < 8; i++) {
-    await prisma.parkingSlot.upsert({
-      where: { locationId_slotCode: { locationId: loc2.id, slotCode: `B${i + 1}` } },
-      update: {},
-      create: { locationId: loc2.id, slotCode: `B${i + 1}`, status: loc2Statuses[i] },
+   // ---- MOU rule ----
+   await prisma.mouRule.deleteMany();
+   await prisma.mouRule.create({
+     data: {
+       name: "MOU Prototype 2026",
+       taxPercent: TAX_PERCENT,
+       operatorPercent: 0,
+       jukirSharePercent: JUKIR_SHARE_PERCENT,
+       // Motorcycle rates
+       firstHour_motorcycle: 2000,
+       nextHour_motorcycle: 1000,
+       maximumDaily_motorcycle: 10000,
+       // Car rates
+       firstHour_car: 3000,
+       nextHour_car: 1500,
+       maximumDaily_car: 15000,
+       validFrom: daysAgo(30),
+       validTo: null,
+     },
+   });
+
+  // ---- Parking Areas (kapasitas, bukan slot) ----
+  const areaSpecs = [
+    { id: "area-a", name: "Area A", location: "Jl. Merdeka No. 1", vehicleType: "motorcycle", capacity: 50, latitude: -7.2516314, longitude: 112.7553284 },
+    { id: "area-b", name: "Area B", location: "Jl. Sudirman No. 88", vehicleType: "motorcycle", capacity: 30, latitude: -7.2509817, longitude: 112.7554219 },
+    { id: "area-c", name: "Area C", location: "Jl. Gatot Subroto No. 10", vehicleType: "car", capacity: 20, latitude: -7.2512973, longitude: 112.7553142 },
+  ];
+  for (const a of areaSpecs) {
+    const fields = {
+      name: a.name,
+      location: a.location,
+      vehicleType: a.vehicleType,
+      capacity: a.capacity,
+      latitude: a.latitude,
+      longitude: a.longitude,
+    };
+    await prisma.parkingArea.upsert({
+      where: { id: a.id },
+      update: fields,
+      create: { id: a.id, ...fields },
     });
   }
 
-  // Sessions + payments. Wipe prior seeded sessions to keep re-seeds clean
-  // (sessions have no natural unique key to upsert on).
-  await prisma.payment.deleteMany({ where: { session: { location: { id: { in: [loc1.id, loc2.id] } } } } });
-  await prisma.parkingSession.deleteMany({ where: { locationId: { in: [loc1.id, loc2.id] } } });
+  // Assign area jukir setelah area tersedia agar FK aman
+  for (const j of jukirSpecs) {
+    await prisma.user.update({
+      where: { email: j.email },
+      data: { areaId: j.areaId },
+    });
+  }
 
-  const slotsL1 = await prisma.parkingSlot.findMany({ where: { locationId: loc1.id }, orderBy: { slotCode: "asc" } });
+  // ---- Reset transaksi & detection agar re-seed bersih ----
+  await prisma.transaction.deleteMany();
+  await prisma.cvDetection.deleteMany();
+  await prisma.setoranEntry.deleteMany(); // New table
 
-  // 6 completed sessions spread across last 7 days (drives revenue chart) + 2 active.
+  // ---- Transaksi selesai (mendorong revenue chart + cash vs QRIS) ----
   const completedSpecs = [
-    { userIdx: 0, day: 6, checkInHour: 8, hours: 2 },
-    { userIdx: 1, day: 5, checkInHour: 10, hours: 3 },
-    { userIdx: 2, day: 4, checkInHour: 9, hours: 1 },
-    { userIdx: 0, day: 3, checkInHour: 14, hours: 5 },
-    { userIdx: 4, day: 2, checkInHour: 11, hours: 2 },
-    { userIdx: 1, day: 1, checkInHour: 13, hours: 4 },
+    { areaId: "area-a", jukirIdx: 0, day: 6, hour: 8, minutes: 120, method: "CASH" as const },
+    { areaId: "area-a", jukirIdx: 1, day: 5, hour: 10, minutes: 180, method: "QRIS" as const },
+    { areaId: "area-b", jukirIdx: 2, day: 4, hour: 9, minutes: 60, method: "CASH" as const },
+    { areaId: "area-a", jukirIdx: 0, day: 3, hour: 14, minutes: 300, method: "QRIS" as const },
+    { areaId: "area-c", jukirIdx: 3, day: 2, hour: 11, minutes: 120, method: "CASH" as const },
+    { areaId: "area-b", jukirIdx: 2, day: 1, hour: 13, minutes: 240, method: "QRIS" as const },
+    { areaId: "area-a", jukirIdx: 1, day: 1, hour: 16, minutes: 90, method: "CASH" as const },
   ];
-  for (let i = 0; i < completedSpecs.length; i++) {
-    const s = completedSpecs[i];
-    const user = users[s.userIdx];
-    const checkIn = daysAgo(s.day, s.checkInHour);
-    const checkOut = new Date(checkIn.getTime() + s.hours * 60 * 60 * 1000);
+  let counter = 1;
+  for (const s of completedSpecs) {
+    const checkIn = daysAgo(s.day, s.hour);
+    const checkOut = new Date(checkIn.getTime() + s.minutes * 60 * 1000);
     const fee = calculateParkingFee(checkIn, checkOut, RULES);
-    const session = await prisma.parkingSession.create({
+    await prisma.transaction.create({
       data: {
-        userId: user.id,
-        vehicleId: vehicles[i % vehicles.length]?.id ?? null,
-        locationId: loc1.id,
-        slotId: slotsL1[i % slotsL1.length]?.id ?? null,
+        transactionCode: `PARK-${String(counter).padStart(5, "0")}`,
+        areaId: s.areaId,
+        jukirId: jukirs[s.jukirIdx]?.id ?? null,
         checkIn,
         checkOut,
         durationMinutes: fee.durationMinutes,
-        totalFee: fee.totalFee,
+        amount: fee.totalFee,
+        paymentMethod: s.method,
+        paidAt: checkOut,
         status: "COMPLETED",
       },
     });
-    await prisma.payment.create({
-      data: {
-        sessionId: session.id,
-        userId: user.id,
-        amount: fee.totalFee,
-        paymentMethod: i % 2 === 0 ? "qris" : "e-wallet",
-        transactionId: `TRX-${1000 + i}`,
-        status: "PAID",
-        paidAt: checkOut,
-      },
-    });
+    counter++;
   }
 
-  // 2 active sessions (no checkout).
-  for (let i = 0; i < 2; i++) {
-    const user = users[i];
-    await prisma.parkingSession.create({
+  // ---- Transaksi aktif (belum checkout) ----
+  const activeSpecs = [
+    { areaId: "area-a", jukirIdx: 0, hour: 8 },
+    { areaId: "area-a", jukirIdx: 1, hour: 9 },
+    { areaId: "area-b", jukirIdx: 2, hour: 8 },
+  ];
+  for (const s of activeSpecs) {
+    await prisma.transaction.create({
       data: {
-        userId: user.id,
-        vehicleId: vehicles[i]?.id ?? null,
-        locationId: loc1.id,
-        slotId: slotsL1[i]?.id ?? null,
-        checkIn: daysAgo(0, 8 + i),
+        transactionCode: `PARK-${String(counter).padStart(5, "0")}`,
+        areaId: s.areaId,
+        jukirId: jukirs[s.jukirIdx]?.id ?? null,
+        checkIn: daysAgo(0, s.hour),
         status: "ACTIVE",
       },
     });
+    counter++;
   }
 
-  // A couple pending/failed payments (unpaid completed sessions) for report variety.
-  const extraSession = await prisma.parkingSession.create({
+  // ---- CvDetection (hasil scan AI terbaru, untuk rekonsiliasi) ----
+  await prisma.cvDetection.createMany({
+    data: [
+      { areaId: "area-a", normalCount: 37, violationCount: 0, source: "cctv" },
+      { areaId: "area-b", normalCount: 5, violationCount: 1, source: "cctv" },
+      { areaId: "area-c", normalCount: 5, violationCount: 0, source: "cctv" },
+    ],
+  });
+  
+  // ---- Sample Setoran Entries (auto-calculated) ----
+  await prisma.setoranEntry.create({
     data: {
-      userId: users[3].id,
-      locationId: loc2.id,
-      checkIn: daysAgo(1, 15),
-      checkOut: daysAgo(1, 17),
-      durationMinutes: 120,
-      totalFee: 11000,
-      status: "COMPLETED",
+      jukirId: jukirs[0].id,
+      areaId: "area-a",
+      date: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+      totalTransactions: 25,
+      grossAmount: 150000,
+      taxPercent: TAX_PERCENT,
+      taxAmount: 15000,
+      jukirSharePercent: JUKIR_SHARE_PERCENT,
+      jukirShareAmount: 22500,
+      status: "APPROVED",
+      approvedAt: new Date(),
+      approvedBy: admin.id,
     },
   });
-  await prisma.payment.create({
-    data: { sessionId: extraSession.id, userId: users[3].id, amount: 11000, paymentMethod: "qris", status: "PENDING" },
+  
+  await prisma.setoranEntry.create({
+    data: {
+      jukirId: jukirs[2].id,
+      areaId: "area-b",
+      date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
+      totalTransactions: 18,
+      grossAmount: 95000,
+      taxPercent: TAX_PERCENT,
+      taxAmount: 9500,
+      jukirSharePercent: JUKIR_SHARE_PERCENT,
+      jukirShareAmount: 14250,
+      status: "PENDING",
+    },
   });
 
-  // Notifications (mixed read/unread).
-  await prisma.notification.deleteMany({ where: { title: { startsWith: "[seed]" } } });
-  const notifs = [
-    { userId: admin.id, type: "system", title: "[seed] Sistem aktif", message: "Backend & database berjalan normal.", isRead: true },
-    { userId: null, type: "info", title: "[seed] Lokasi baru", message: "Parkir Mall Selatan telah ditambahkan.", isRead: false },
-    { userId: users[0].id, type: "payment", title: "[seed] Pembayaran berhasil", message: "Transaksi TRX-1000 lunas.", isRead: false },
-    { userId: admin.id, type: "alert", title: "[seed] Slot maintenance", message: "Slot B4 dalam perbaikan.", isRead: false },
-    { userId: users[1].id, type: "info", title: "[seed] Selamat datang", message: "Terima kasih telah bergabung.", isRead: true },
-  ];
-  for (const n of notifs) {
-    await prisma.notification.create({ data: n });
-  }
-
   console.log(
-    "Seeded: 8 users (password: password123), 4 vehicles, 2 locations, 14 slots, 9 sessions, 7 payments, 5 notifications",
+    `Seeded successfully!
+    
+    Users: ${admin.id} (ADMIN), ${customer.id} (USER), ${jukirs.length} JUKIR
+    - Admin: admin@sess.local | password: password123
+    - User: user@sess.local | password: password123
+    - Jukir accounts created with email: jukir.xxx@sess.local | password: password123
+    
+    Parking Areas: 3
+    Jurik Assigned: ${jukirs.length}
+    MOU Rule: Tax ${TAX_PERCENT}%, Jukir Share ${JUKIR_SHARE_PERCENT}%
+    
+    Transactions: ${counter - 1} total (completed + active)
+    CV Detections: 3 records
+    Sample Setoran: 2 entries
+    
+    Login credentials:
+    - Admin: admin@sess.local / password123
+    - Jukir Budi: jukir.budi@sess.local / password123 (Area A)
+    - Jukir Siti: jukir.siti@sess.local / password123 (Area A)
+    - Jukir Agus: jukir.agus@sess.local / password123 (Area B)
+    - Jukir Dewi: jukir.dewi@sess.local / password123 (Area C)
+    - Customer: user@sess.local / password123`,
   );
 }
 
