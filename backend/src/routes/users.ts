@@ -38,6 +38,18 @@ const createUserSchema = z.object({
 
 const statusSchema = z.object({ status: z.enum(["ACTIVE", "BLOCKED"]) });
 
+const updateUserSchema = z.object({
+  name: z.string().min(2).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(["ADMIN", "JUKIR", "USER"]).optional(),
+  status: z.enum(["ACTIVE", "BLOCKED"]).optional(),
+  areaId: z.string().nullable().optional(),
+});
+
+const resetPasswordSchema = z.object({
+  password: z.string().min(6),
+});
+
 // POST /api/users — Create new user (Admin only)
 usersRouter.post("/", requireAuth, async (req, res, next) => {
   try {
@@ -126,6 +138,107 @@ usersRouter.patch("/:id/status", requireAuth, async (req, res, next) => {
   }
 });
 
+// PATCH /api/users/:id — Update user profile/role/access status (Admin only)
+usersRouter.patch("/:id", requireAuth, async (req, res, next) => {
+  try {
+    if (req.user?.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can update users",
+        code: "FORBIDDEN",
+      });
+    }
+
+    const payload = updateUserSchema.parse(req.body);
+
+    const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "User tidak ditemukan", code: "NOT_FOUND" });
+    }
+
+    const nextRole = payload.role ?? existing.role;
+    let nextAreaId = existing.areaId;
+
+    if (payload.areaId !== undefined) {
+      nextAreaId = payload.areaId;
+    }
+
+    if (nextRole === "JUKIR" && !nextAreaId) {
+      return res.status(400).json({
+        success: false,
+        message: "Area wajib diisi untuk role JUKIR",
+        code: "AREA_REQUIRED",
+      });
+    }
+
+    if (nextRole !== "JUKIR") {
+      nextAreaId = null;
+    }
+
+    if (payload.email && payload.email !== existing.email) {
+      const duplicate = await prisma.user.findUnique({ where: { email: payload.email } });
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          message: "Email sudah terdaftar",
+          code: "DUPLICATE_EMAIL",
+        });
+      }
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: {
+        ...(payload.name ? { name: payload.name } : {}),
+        ...(payload.email ? { email: payload.email } : {}),
+        ...(payload.role ? { role: payload.role } : {}),
+        ...(payload.status ? { status: payload.status } : {}),
+        areaId: nextAreaId,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        status: true,
+        areaId: true,
+        areaJurik: { select: { name: true } },
+      },
+    });
+
+    res.json({ success: true, data: user, message: "User berhasil diperbarui" });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PATCH /api/users/:id/reset-password — reset password user (Admin only)
+usersRouter.patch("/:id/reset-password", requireAuth, async (req, res, next) => {
+  try {
+    if (req.user?.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can reset password",
+        code: "FORBIDDEN",
+      });
+    }
+
+    const { password } = resetPasswordSchema.parse(req.body);
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User tidak ditemukan", code: "NOT_FOUND" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    await prisma.user.update({ where: { id: req.params.id }, data: { passwordHash } });
+
+    res.json({ success: true, message: "Password berhasil direset" });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // PATCH /api/users/:id/area — Update area assignment for Jurik (Admin only)
 usersRouter.patch("/:id/area", requireAuth, async (req, res, next) => {
   try {
@@ -194,4 +307,3 @@ usersRouter.get("/me", requireAuth, async (req, res, next) => {
     next(e);
   }
 });
-
