@@ -26,6 +26,7 @@ import { JukirViolations } from "./pages/jukir/Violations";
 import { JukirTraffic } from "./pages/jukir/Traffic";
 import { AdminLiveTraffic } from "./pages/admin/LiveTraffic";
 import { AdminPajakSetoran } from "./pages/admin/PajakSetoran";
+import { Settings } from "./pages/admin/Settings";
 
 // Require authentication wrapper
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -70,7 +71,7 @@ export default function App() {
           <Route path="pajak-setoran" element={<AdminPajakSetoran />} />
           <Route path="reconciliation" element={<Reconciliation />} />
           <Route path="users" element={<Users />} />
-          <Route path="settings" element={<Placeholder title="Pengaturan" phase="selanjutnya" />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="jukir" element={<Placeholder title="Manage Jurik" phase="sudah ada di Users" />} />
           <Route path="mou" element={<Mou />} />
           <Route path="area-scan" element={<AreaScan />} />
