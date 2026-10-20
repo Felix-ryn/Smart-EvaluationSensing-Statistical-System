@@ -948,6 +948,433 @@ textarea.input::placeholder {
 }
 
 /* =========================================
+   Utility layout for forms/filters/modals
+========================================= */
+.filter-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.filter-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.filter-tabs button {
+  border: 1px solid var(--lms-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--lms-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-tabs button:hover {
+  border-color: var(--brand-300);
+  color: var(--lms-primary-dark);
+}
+
+.filter-tabs button.active {
+  border-color: #b7e7dd;
+  background: #ebf9f5;
+  color: #0e7462;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.input-icon-wrap {
+  min-width: 240px;
+  flex: 1;
+  max-width: 320px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.input-icon-wrap > svg {
+  position: absolute;
+  left: 0.7rem;
+  color: var(--lms-text-muted);
+  pointer-events: none;
+}
+
+.input-icon-wrap .input {
+  padding-left: 2rem;
+}
+
+.form-section {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.detail-item {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.65rem;
+}
+
+.detail-item label {
+  color: var(--lms-text-muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+}
+
+.currency-display {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f7b68;
+  line-height: 1.2;
+}
+
+.summary-item-large {
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--lms-border-light);
+}
+
+.payment-methods {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.payment-option {
+  width: 100%;
+  border: 1px solid var(--lms-border);
+  border-radius: 11px;
+  background: #fff;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.payment-option:hover {
+  border-color: #bfe4dc;
+  transform: translateY(-1px);
+}
+
+.payment-option.active {
+  border-color: #95dbcc;
+  box-shadow: 0 0 0 3px rgba(0, 155, 131, 0.08);
+  background: #f7fefd;
+}
+
+.payment-title {
+  display: block;
+  font-weight: 700;
+  color: var(--lms-text-primary);
+}
+
+.payment-desc {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--lms-text-secondary);
+}
+
+.payment-summary {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed var(--lms-border-light);
+}
+
+.summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.amount-primary {
+  font-weight: 700;
+  color: #0f7b68;
+}
+
+.status-display {
+  border: 1px solid var(--lms-border-light);
+  border-radius: 10px;
+  padding: 0.85rem;
+  background: #fbfefe;
+}
+
+.status-details {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+}
+
+.currency-large {
+  font-weight: 700;
+  color: #0f7b68;
+}
+
+.empty-state {
+  border: 1px dashed var(--lms-border);
+  border-radius: 10px;
+  background: #fcfffe;
+  text-align: center;
+  color: var(--lms-text-muted);
+  padding: 1.2rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 27, 37, 0.46);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal-card {
+  width: min(96vw, 540px);
+  border-radius: 14px;
+  border: 1px solid #cde7e1;
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(7, 41, 51, 0.25);
+  padding: 1rem 1rem 1.15rem;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+
+.modal-head h2 {
+  margin-bottom: 0;
+}
+
+.jukir-vehicle-select {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.95rem 0;
+}
+
+.vehicle-choice {
+  border: 1px solid var(--lms-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--lms-text-secondary);
+  font-weight: 700;
+  padding: 0.7rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vehicle-choice:hover {
+  border-color: #bfe4dc;
+  color: var(--lms-text-primary);
+}
+
+.vehicle-choice.active {
+  background: #ecfaf6;
+  border-color: #96dbcc;
+  color: #0a6d5d;
+  box-shadow: 0 0 0 2px rgba(0, 155, 131, 0.08);
+}
+
+.jukir-transaction-kpi .card {
+  margin-bottom: 0;
+}
+
+.jukir-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  width: min(100%, 560px);
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.jukir-empty-state-cell {
+  padding: 1.2rem !important;
+}
+
+/* =========================================
+   Thermal parking ticket (80mm)
+========================================= */
+.ticket-modal {
+  width: min(96vw, 360px);
+}
+
+.ticket-print-area {
+  border: 1px dashed var(--lms-border);
+  border-radius: 10px;
+  padding: 0.85rem;
+  background: #fff;
+}
+
+.ticket-logo-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ticket-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.ticket-brand {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.ticket-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+  color: var(--lms-text-secondary);
+}
+
+.ticket-divider {
+  margin: 0.7rem 0;
+  border-top: 1px dashed var(--lms-border);
+}
+
+.ticket-meta {
+  display: grid;
+  gap: 0.32rem;
+  font-size: 0.75rem;
+}
+
+.ticket-meta > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.ticket-meta span {
+  color: var(--lms-text-secondary);
+}
+
+.ticket-meta strong {
+  font-weight: 700;
+  color: #1e2f36;
+  text-align: right;
+}
+
+.ticket-qr-wrap {
+  margin-top: 0.8rem;
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+}
+
+.ticket-qr-wrap img {
+  border: 1px solid var(--lms-border-light);
+  border-radius: 8px;
+  padding: 5px;
+  background: #fff;
+}
+
+.ticket-note {
+  margin: 0;
+  text-align: center;
+  font-size: 0.69rem;
+  color: var(--lms-text-secondary);
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .ticket-print-root,
+  .ticket-print-root * {
+    visibility: visible !important;
+  }
+
+  .ticket-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 72mm;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: #fff;
+  }
+
+  .ticket-modal-actions,
+  .ticket-head {
+    display: none !important;
+  }
+
+  .ticket-print-area {
+    border: none;
+    padding: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .detail-row {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-section,
+  .jukir-toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .input-icon-wrap {
+    max-width: none;
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* =========================================
    Auth (Login)
 ========================================= */
 .auth-wrap {

@@ -2,7 +2,6 @@ import { NavLink, Outlet } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
-  Banknote,
   CreditCard,
   FileText,
   LayoutDashboard,
@@ -40,7 +39,6 @@ const menuConfig = {
   JUKIR: [
     { to: "/jukir/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/jukir/transactions", label: "Transaksi Parkir", icon: CreditCard },
-    { to: "/jukir/payment", label: "Pembayaran", icon: Banknote },
     { to: "/jukir/violations", label: "Pelanggaran", icon: AlertTriangle },
     { to: "/jukir/setoran", label: "Setoran", icon: Coins },
     { to: "/jukir/qris", label: "QRIS", icon: QrCode },

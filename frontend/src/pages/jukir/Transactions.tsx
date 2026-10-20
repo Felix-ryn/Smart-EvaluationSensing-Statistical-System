@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CreditCard, Plus } from "lucide-react";
+import { CarFront, CreditCard, ListFilter, Plus, Printer, Search, X } from "lucide-react";
 import { apiClient } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -11,14 +11,24 @@ interface Transaction {
   jukirId?: string | null;
   vehicleType?: string | null;
   plateNumber?: string | null;
-  checkIn: Date;
-  checkOut?: Date | null;
+  checkIn: Date | string;
+  checkOut?: Date | string | null;
   durationMinutes?: number | null;
   amount?: number | null;
   paymentMethod?: "CASH" | "QRIS" | null;
-  paidAt?: Date | null;
+  paidAt?: Date | string | null;
   status: "ACTIVE" | "COMPLETED" | "CANCELLED";
   area: { name: string };
+}
+
+interface TicketData {
+  transactionCode: string;
+  checkIn: Date | string;
+  vehicleType?: string | null;
+  plateNumber?: string | null;
+  areaName: string;
+  jukirName: string;
+  qrCodeUrl: string;
 }
 
 const vehicleLabel = (t?: string | null) => (t === "car" ? "Mobil" : t === "motorcycle" ? "Motor" : "-");
@@ -28,22 +38,24 @@ export function JukirTransactions() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [filterStatus, setFilterStatus] = useState<"ALL" | "ACTIVE" | "COMPLETED">("ALL");
-  const [showForm, setShowForm] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<"ALL" | "ACTIVE" | "COMPLETED">("ACTIVE");
+  const [searchKeyword, setSearchKeyword] = useState("");
+
+  const [showModal, setShowModal] = useState(false);
   const [vehicleType, setVehicleType] = useState<"motorcycle" | "car">("motorcycle");
   const [plateNumber, setPlateNumber] = useState("");
   const [creating, setCreating] = useState(false);
+  const [ticketData, setTicketData] = useState<TicketData | null>(null);
 
   useEffect(() => {
     fetchTransactions();
-  }, [filterStatus]);
+  }, []);
 
   const fetchTransactions = async () => {
     try {
       setLoading(true);
       const response = await apiClient.get("/transactions");
       if (response.data.success) {
-        // Filter transactions based on Jurik's area
         setTransactions(response.data.data);
       }
     } catch (error) {
@@ -68,8 +80,50 @@ export function JukirTransactions() {
     }
   };
 
-  const handlePayment = (transactionId: string) => {
-    navigate(`/jukir/payment?tx=${transactionId}`);
+  const handlePayment = (transactionCode: string) => {
+    navigate(`/jukir/payment?tx=${encodeURIComponent(transactionCode)}`);
+  };
+
+  const openCreateModal = () => {
+    setShowModal(true);
+  };
+
+  const closeCreateModal = () => {
+    if (creating) return;
+    setShowModal(false);
+    setPlateNumber("");
+    setVehicleType("motorcycle");
+  };
+
+  const forceCloseCreateModal = () => {
+    setShowModal(false);
+    setPlateNumber("");
+    setVehicleType("motorcycle");
+  };
+
+  const closeTicketModal = () => {
+    setTicketData(null);
+  };
+
+  const buildVehicleQrUrl = (tx: Pick<Transaction, "transactionCode" | "checkIn" | "vehicleType" | "plateNumber">) => {
+    const qrPayload = `VEHICLE|${tx.transactionCode}|${new Date(tx.checkIn).toISOString()}|${tx.vehicleType || "-"}|${tx.plateNumber || "-"}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrPayload)}`;
+  };
+
+  const openTicketModal = (tx: Transaction) => {
+    setTicketData({
+      transactionCode: tx.transactionCode,
+      checkIn: tx.checkIn,
+      vehicleType: tx.vehicleType,
+      plateNumber: tx.plateNumber,
+      areaName: tx.area?.name || "-",
+      jukirName: user?.name || "-",
+      qrCodeUrl: buildVehicleQrUrl(tx),
+    });
+  };
+
+  const handlePrintTicket = () => {
+    window.print();
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -78,11 +132,13 @@ export function JukirTransactions() {
       alert("Akun Anda belum ditugaskan ke area parkir. Hubungi admin.");
       return;
     }
+
     const plate = plateNumber.trim().toUpperCase();
     if (!plate) {
       alert("Plat nomor wajib diisi");
       return;
     }
+
     setCreating(true);
     try {
       const response = await apiClient.post("/transactions", {
@@ -90,34 +146,59 @@ export function JukirTransactions() {
         vehicleType,
         plateNumber: plate,
       });
+
       if (response.data.success) {
-        setShowForm(false);
-        setPlateNumber("");
-        setVehicleType("motorcycle");
+        const createdTx = response.data.data as Transaction;
+        forceCloseCreateModal();
+        openTicketModal(createdTx);
+        setTransactions((prev) => [createdTx, ...prev]);
         fetchTransactions();
       } else {
         throw new Error(response.data.message || "Gagal membuat transaksi");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Create transaction error:", error);
-      alert("Gagal membuat transaksi baru");
+      const message = error?.response?.data?.message || "Gagal membuat transaksi baru";
+      alert(message);
     } finally {
       setCreating(false);
     }
   };
 
-  const filteredTransactions = transactions.filter(tx => {
-    if (filterStatus === "ALL") return true;
-    return tx.status === filterStatus;
-  });
+  const totalCount = transactions.length;
+  const activeCount = transactions.filter((tx) => tx.status === "ACTIVE").length;
+  const completedCount = transactions.filter((tx) => tx.status === "COMPLETED").length;
+
+  const filteredTransactions = useMemo(() => {
+    const keyword = searchKeyword.trim().toLowerCase();
+
+    return transactions.filter((tx) => {
+      if (filterStatus !== "ALL" && tx.status !== filterStatus) return false;
+
+      if (!keyword) return true;
+      const plate = tx.plateNumber?.toLowerCase() || "";
+      const code = tx.transactionCode?.toLowerCase() || "";
+      return plate.includes(keyword) || code.includes(keyword);
+    });
+  }, [transactions, filterStatus, searchKeyword]);
 
   const formatCurrency = (amount?: number | null) => {
     if (amount == null) return "-";
     return `Rp ${amount.toLocaleString("id-ID")}`;
   };
 
-  const formatTime = (date: Date) => {
+  const formatTime = (date: Date | string) => {
     return new Date(date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const formatDateTime = (date: Date | string) => {
+    return new Date(date).toLocaleString("id-ID", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -134,99 +215,80 @@ export function JukirTransactions() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1><CreditCard className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Transaksi Parkir</h1>
+        <h1>
+          <CreditCard className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Transaksi Parkir
+        </h1>
         <p>Kelola transaksi parkir yang masuk dan keluar</p>
       </header>
 
-      {/* Filters & Actions */}
+      <div className="grid grid-kpi jukir-transaction-kpi">
+        <div className="card card-stat">
+          <div className="icon-container icon-info">
+            <CreditCard size={20} strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <div className="stat-content">
+            <span className="stat-label">Total Transaksi</span>
+            <span className="stat-value">{totalCount}</span>
+          </div>
+        </div>
+        <div className="card card-stat">
+          <div className="icon-container icon-warning">
+            <ListFilter size={20} strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <div className="stat-content">
+            <span className="stat-label">Sedang Aktif</span>
+            <span className="stat-value">{activeCount}</span>
+          </div>
+        </div>
+        <div className="card card-stat">
+          <div className="icon-container icon-success">
+            <CarFront size={20} strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <div className="stat-content">
+            <span className="stat-label">Selesai</span>
+            <span className="stat-value">{completedCount}</span>
+          </div>
+        </div>
+      </div>
+
       <div className="card mb-4">
-        <div className="filter-section">
+        <div className="filter-section jukir-transaction-toolbar">
           <div className="filter-tabs">
-            <button
-              className={filterStatus === "ALL" ? "active" : ""}
-              onClick={() => setFilterStatus("ALL")}
-            >
-              Semua ({transactions.length})
+            <button className={filterStatus === "ALL" ? "active" : ""} onClick={() => setFilterStatus("ALL")}>
+              Semua ({totalCount})
             </button>
-            <button
-              className={filterStatus === "ACTIVE" ? "active" : ""}
-              onClick={() => setFilterStatus("ACTIVE")}
-            >
-              Aktif
+            <button className={filterStatus === "ACTIVE" ? "active" : ""} onClick={() => setFilterStatus("ACTIVE")}>
+              Aktif ({activeCount})
             </button>
             <button
               className={filterStatus === "COMPLETED" ? "active" : ""}
               onClick={() => setFilterStatus("COMPLETED")}
             >
-              Selesai
+              Selesai ({completedCount})
             </button>
           </div>
 
-          <div className="actions">
-            <button
-              className="btn btn-primary"
-              onClick={() => setShowForm((v) => !v)}
-            >
+          <div className="jukir-toolbar-actions">
+            <label className="input-icon-wrap" htmlFor="tx-search">
+              <Search size={16} strokeWidth={1.9} aria-hidden="true" />
+              <input
+                id="tx-search"
+                className="input"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                placeholder="Cari plat / ID transaksi"
+                autoComplete="off"
+              />
+            </label>
+
+            <button className="btn btn-primary" onClick={openCreateModal}>
               <Plus size={16} strokeWidth={2} aria-hidden="true" /> Transaksi Baru
             </button>
           </div>
         </div>
       </div>
 
-      {/* New Transaction Form */}
-      {showForm && (
-        <div className="card mb-4">
-          <h2><Plus size={18} strokeWidth={1.8} aria-hidden="true" /> Transaksi Baru</h2>
-          <form onSubmit={handleCreate}>
-            <div className="grid grid-2">
-              <div className="form-group">
-                <label htmlFor="vehicleType">Jenis Kendaraan</label>
-                <select
-                  id="vehicleType"
-                  className="input"
-                  value={vehicleType}
-                  onChange={(e) => setVehicleType(e.target.value as "motorcycle" | "car")}
-                >
-                  <option value="motorcycle">Motor</option>
-                  <option value="car">Mobil</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="plateNumber">Plat Nomor</label>
-                <input
-                  id="plateNumber"
-                  type="text"
-                  className="input"
-                  value={plateNumber}
-                  onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                  placeholder="B 1234 XYZ"
-                  maxLength={15}
-                  required
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-
-            <div className="actions">
-              <button type="submit" className="btn btn-primary" disabled={creating}>
-                {creating ? "Menyimpan..." : "Simpan"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={() => setShowForm(false)}
-                disabled={creating}
-              >
-                Batal
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Transactions Table */}
-      <div className="card">
+      <div className="card table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -245,11 +307,15 @@ export function JukirTransactions() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={10} className="text-center">Loading...</td>
+                <td colSpan={10} className="text-center">
+                  Loading...
+                </td>
               </tr>
             ) : filteredTransactions.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-muted">Tidak ada data transaksi</td>
+                <td colSpan={10} className="text-center text-muted jukir-empty-state-cell">
+                  Tidak ada data transaksi yang cocok.
+                </td>
               </tr>
             ) : (
               filteredTransactions.map((tx) => (
@@ -258,33 +324,29 @@ export function JukirTransactions() {
                   <td>{vehicleLabel(tx.vehicleType)}</td>
                   <td>{tx.plateNumber || "-"}</td>
                   <td>{tx.area.name}</td>
-                  <td>{formatTime(new Date(tx.checkIn))}</td>
+                  <td>{formatTime(tx.checkIn)}</td>
+                  <td>{tx.checkOut ? formatTime(tx.checkOut) : "-"}</td>
                   <td>
-                    {tx.checkOut ? formatTime(new Date(tx.checkOut)) : "-"}
-                  </td>
-                  <td>
-                    {tx.durationMinutes 
-                      ? `${Math.floor(tx.durationMinutes / 60)}j ${tx.durationMinutes % 60}m`
-                      : "-"}
+                    {tx.durationMinutes ? `${Math.floor(tx.durationMinutes / 60)}j ${tx.durationMinutes % 60}m` : "-"}
                   </td>
                   <td>{formatCurrency(tx.amount)}</td>
                   <td>{getStatusBadge(tx.status)}</td>
                   <td>
                     <div className="action-buttons">
+                      {tx.status === "ACTIVE" && (
+                        <button className="btn btn-sm btn-secondary" onClick={() => openTicketModal(tx)}>
+                          <Printer size={14} strokeWidth={2} aria-hidden="true" /> Cetak Karcis
+                        </button>
+                      )}
+
                       {tx.status === "ACTIVE" && !tx.checkOut && (
-                        <button
-                          className="btn btn-sm btn-outline"
-                          onClick={() => handleCheckout(tx.id)}
-                        >
+                        <button className="btn btn-sm btn-outline" onClick={() => handleCheckout(tx.id)}>
                           Checkout
                         </button>
                       )}
-                      
-                      {(tx.checkOut || tx.status === "COMPLETED") && (
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={() => handlePayment(tx.id)}
-                        >
+
+                      {tx.status === "ACTIVE" && !!tx.checkOut && tx.amount != null && (
+                        <button className="btn btn-sm btn-primary" onClick={() => handlePayment(tx.transactionCode)}>
                           Bayar
                         </button>
                       )}
@@ -296,6 +358,116 @@ export function JukirTransactions() {
           </tbody>
         </table>
       </div>
+
+      {showModal && (
+        <div className="modal-backdrop" role="presentation" onClick={closeCreateModal}>
+          <div className="modal-card jukir-transaction-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>
+                <Plus size={18} strokeWidth={1.8} aria-hidden="true" /> Tambah Transaksi Baru
+              </h2>
+              <button type="button" className="btn btn-outline btn-sm" onClick={closeCreateModal} disabled={creating}>
+                <X size={15} strokeWidth={2.2} aria-hidden="true" />
+              </button>
+            </div>
+
+            <p className="text-muted">Pilih jenis kendaraan dan isi plat nomor untuk check-in kendaraan baru.</p>
+
+            <form onSubmit={handleCreate}>
+              <div className="jukir-vehicle-select" role="radiogroup" aria-label="Jenis Kendaraan">
+                <button
+                  type="button"
+                  className={`vehicle-choice ${vehicleType === "motorcycle" ? "active" : ""}`}
+                  onClick={() => setVehicleType("motorcycle")}
+                >
+                  Motor
+                </button>
+                <button
+                  type="button"
+                  className={`vehicle-choice ${vehicleType === "car" ? "active" : ""}`}
+                  onClick={() => setVehicleType("car")}
+                >
+                  Mobil
+                </button>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="plateNumber">Plat Nomor</label>
+                <input
+                  id="plateNumber"
+                  type="text"
+                  className="input"
+                  value={plateNumber}
+                  onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
+                  placeholder="Contoh: B 1234 XYZ"
+                  maxLength={15}
+                  required
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="actions">
+                <button type="submit" className="btn btn-primary" disabled={creating}>
+                  {creating ? "Menyimpan..." : "Simpan Transaksi"}
+                </button>
+                <button type="button" className="btn btn-outline" onClick={closeCreateModal} disabled={creating}>
+                  Batal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {ticketData && (
+        <div className="modal-backdrop" role="presentation" onClick={closeTicketModal}>
+          <div className="modal-card ticket-modal ticket-print-root" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head ticket-head">
+              <h2>
+                <Printer size={18} strokeWidth={1.8} aria-hidden="true" /> Karcis Parkir
+              </h2>
+              <button type="button" className="btn btn-outline btn-sm" onClick={closeTicketModal}>
+                <X size={15} strokeWidth={2.2} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="ticket-print-area">
+              <div className="ticket-logo-wrap">
+                <img src="/logo.png" alt="SESS" className="ticket-logo" />
+                <div>
+                  <p className="ticket-brand">Smart Street Parking</p>
+                  <p className="ticket-sub">Karcis Kendaraan</p>
+                </div>
+              </div>
+
+              <div className="ticket-divider" />
+
+              <div className="ticket-meta">
+                <div><span>ID</span><strong>{ticketData.transactionCode}</strong></div>
+                <div><span>Jam Masuk</span><strong>{formatDateTime(ticketData.checkIn)}</strong></div>
+                <div><span>Jenis</span><strong>{vehicleLabel(ticketData.vehicleType)}</strong></div>
+                <div><span>Plat</span><strong>{ticketData.plateNumber || "-"}</strong></div>
+                <div><span>Jukir</span><strong>{ticketData.jukirName}</strong></div>
+                <div><span>Area</span><strong>{ticketData.areaName}</strong></div>
+              </div>
+
+              <div className="ticket-qr-wrap">
+                <img src={ticketData.qrCodeUrl} alt={`QR Kendaraan ${ticketData.transactionCode}`} width={170} height={170} />
+                <p className="ticket-note">Simpan karcis ini sampai kendaraan keluar.</p>
+              </div>
+            </div>
+
+            <div className="actions ticket-modal-actions mt-4">
+              <button type="button" className="btn btn-primary" onClick={handlePrintTicket}>
+                <Printer size={16} strokeWidth={2} aria-hidden="true" /> Print Karcis
+              </button>
+              <button type="button" className="btn btn-outline" onClick={closeTicketModal}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
