@@ -102,12 +102,28 @@ const statusSchema = z.object({
   adminNote: z.string().optional(),
 });
 
-// PATCH /api/violations/:id/status — admin verifikasi (valid/rejected).
-violationsRouter.patch("/:id/status", requireAuth, requireAdmin, async (req, res, next) => {
+// PATCH /api/violations/:id/status — admin atau jukir verifikasi (valid/rejected).
+violationsRouter.patch("/:id/status", requireAuth, async (req, res, next) => {
   try {
     const { status, adminNote } = statusSchema.parse(req.body);
+    const violationId = req.params.id;
+    
+    // Check: hanya Admin atau Jukir yang buat laporan bisa validasi
+    const violation = await prisma.violation.findUnique({ where: { id: violationId } });
+    if (!violation) {
+      return res.status(404).json({ success: false, message: "Laporan tidak ditemukan" });
+    }
+    
+    const isAdmin = req.user!.role === "ADMIN";
+    const isReporter = req.user!.id === violation.reportedById;
+    const isJukirReporter = req.user!.role === "JUKIR" && isReporter;
+    
+    if (!isAdmin && !isJukirReporter) {
+      return res.status(403).json({ success: false, message: "Tidak punya akses" });
+    }
+    
     const data = await prisma.violation.update({
-      where: { id: req.params.id },
+      where: { id: violationId },
       data: { status, adminNote },
     });
     res.json({ success: true, data });

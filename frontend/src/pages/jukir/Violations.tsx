@@ -1,5 +1,6 @@
 import { AlertTriangle, ClipboardList } from "lucide-react";
 import { ViolationForm } from "../ViolationForm";
+import { LiveCameraDetection } from "../../components/LiveCameraDetection";
 
 // Jenis pelanggaran murni ditentukan model AI (parking_violation / none),
 // jukir hanya upload foto + area + keterangan opsional.
@@ -48,6 +49,9 @@ export function JukirViolations() {
           </div>
         </div>
       </div>
+
+      {/* Violations Table - hanya tampil di Jukir */}
+      <LiveCameraDetection defaultSource="JUKIR" showViolationsTable={true} />
     </div>
   );
 }

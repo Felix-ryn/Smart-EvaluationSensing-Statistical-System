@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, Filter, Search, ShieldX } from "lucide-react";
 import { api } from "../../api/client";
-import { ViolationForm } from "../ViolationForm";
 
 interface Violation {
   id: string;
@@ -104,10 +103,7 @@ export function Violations() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16, maxWidth: 620 }}>
-        <h3 style={{ marginTop: 0 }}>Lapor sebagai Admin</h3>
-        <ViolationForm onDone={load} defaultSource="CCTV" />
-      </div>
+
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="violations-filter-grid">
