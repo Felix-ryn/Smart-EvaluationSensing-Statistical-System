@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Camera, Upload } from "lucide-react";
 import { api } from "../api/client";
+import { LiveCameraDetection } from "../components/LiveCameraDetection";
 
 interface Area {
   id: string;
@@ -22,6 +24,7 @@ export function ViolationForm({
   onDone?: () => void;
   defaultSource?: "USER" | "JUKIR" | "CCTV";
 }) {
+  const [activeTab, setActiveTab] = useState<"upload" | "camera">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [areaId, setAreaId] = useState("");
   const [source, setSource] = useState(defaultSource);
@@ -73,85 +76,140 @@ export function ViolationForm({
   }, [file]);
 
   return (
-    <form onSubmit={submit} className="violation-form-grid">
-      <div className="form-group">
-        <label>Area Parkir</label>
-        <select className="input" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
-          {areas.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
-        </select>
+    <div>
+      {/* Tab toggle */}
+      <div className="tabs-container" style={{ marginBottom: 16, display: "flex", gap: 8, borderBottom: "1px solid #e5e7eb" }}>
+        <button
+          type="button"
+          className={`tab-button ${activeTab === "upload" ? "active" : ""}`}
+          onClick={() => setActiveTab("upload")}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: activeTab === "upload" ? "#f3f4f6" : "transparent",
+            border: "none",
+            borderBottom: activeTab === "upload" ? "2px solid var(--primary)" : "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: "14px",
+            fontWeight: activeTab === "upload" ? "600" : "400",
+          }}
+        >
+          <Upload size={16} /> Upload Foto/Video
+        </button>
+        <button
+          type="button"
+          className={`tab-button ${activeTab === "camera" ? "active" : ""}`}
+          onClick={() => setActiveTab("camera")}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: activeTab === "camera" ? "#f3f4f6" : "transparent",
+            border: "none",
+            borderBottom: activeTab === "camera" ? "2px solid var(--primary)" : "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: "14px",
+            fontWeight: activeTab === "camera" ? "600" : "400",
+          }}
+        >
+          <Camera size={16} /> Kamera Live
+        </button>
       </div>
 
-      <div className="form-group">
-        <label>Sumber Laporan</label>
-        <select className="input" value={source} onChange={(e) => setSource(e.target.value as typeof source)}>
-          <option value="USER">User</option>
-          <option value="JUKIR">Jukir</option>
-          <option value="CCTV">CCTV</option>
-        </select>
-      </div>
+      {/* Upload tab */}
+      {activeTab === "upload" && (
+        <form onSubmit={submit} className="violation-form-grid">
+          <div className="form-group">
+            <label>Area Parkir</label>
+            <select className="input" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
+              {areas.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
 
-      <div className="form-group">
-        <label>Upload Bukti</label>
-        <div className="violation-upload-box">
-          <input
-            className="input"
-            type="file"
-            accept="image/*,video/*"
-            capture="environment"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          <p className="text-muted">Gunakan foto/video yang menampilkan kendaraan dan area secara jelas.</p>
-          {file && <p className="small">File: <strong>{file.name}</strong></p>}
-          {previewUrl && file?.type.startsWith("image/") && (
-            <img src={previewUrl} alt="preview" className="violation-preview" />
+          <div className="form-group">
+            <label>Sumber Laporan</label>
+            <select className="input" value={source} onChange={(e) => setSource(e.target.value as typeof source)}>
+              <option value="USER">User</option>
+              <option value="JUKIR">Jukir</option>
+              <option value="CCTV">CCTV</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Upload Bukti</label>
+            <div className="violation-upload-box">
+              <input
+                className="input"
+                type="file"
+                accept="image/*,video/*"
+                capture="environment"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <p className="text-muted">Gunakan foto/video yang menampilkan kendaraan dan area secara jelas.</p>
+              {file && <p className="small">File: <strong>{file.name}</strong></p>}
+              {previewUrl && file?.type.startsWith("image/") && (
+                <img src={previewUrl} alt="preview" className="violation-preview" />
+              )}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Keterangan Tambahan (Opsional)</label>
+            <textarea
+              className="input"
+              rows={3}
+              placeholder="Contoh: kendaraan parkir di jalur keluar-masuk"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              style={{ resize: "vertical" }}
+            />
+          </div>
+
+          <button className="btn btn-primary" disabled={!file || loading} type="submit">
+            {loading ? "Menganalisis..." : "Kirim & Analisis"}
+          </button>
+          {error && <div style={{ color: "crimson" }}>{error}</div>}
+          {result && (
+            <div className="card">
+              <strong>
+                {result.violationDetected ? (
+                  <span className="badge badge-danger">Pelanggaran terdeteksi</span>
+                ) : result.needsReview ? (
+                  <span className="badge badge-warning">Perlu review admin/jukir</span>
+                ) : (
+                  <span className="badge badge-success">Tidak ada pelanggaran</span>
+                )}
+              </strong>
+              <p style={{ margin: "8px 0 0" }}>
+                Parkir normal: {result.summary.normal} · pelanggaran: {result.summary.violation}
+              </p>
+              {result.violation.confidence != null && (
+                <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>
+                  Keyakinan: {(result.violation.confidence * 100).toFixed(1)}%
+                </p>
+              )}
+              <img
+                src={result.violation.photoPath}
+                alt="laporan"
+                style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
+              />
+            </div>
           )}
-        </div>
-      </div>
-
-      <div className="form-group">
-        <label>Keterangan Tambahan (Opsional)</label>
-        <textarea
-          className="input"
-          rows={3}
-          placeholder="Contoh: kendaraan parkir di jalur keluar-masuk"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          style={{ resize: "vertical" }}
-        />
-      </div>
-
-      <button className="btn btn-primary" disabled={!file || loading} type="submit">
-        {loading ? "Menganalisis..." : "Kirim & Analisis"}
-      </button>
-      {error && <div style={{ color: "crimson" }}>{error}</div>}
-      {result && (
-        <div className="card">
-          <strong>
-            {result.violationDetected ? (
-              <span className="badge badge-danger">Pelanggaran terdeteksi</span>
-            ) : result.needsReview ? (
-              <span className="badge badge-warning">Perlu review admin/jukir</span>
-            ) : (
-              <span className="badge badge-success">Tidak ada pelanggaran</span>
-            )}
-          </strong>
-          <p style={{ margin: "8px 0 0" }}>
-            Parkir normal: {result.summary.normal} · pelanggaran: {result.summary.violation}
-          </p>
-          {result.violation.confidence != null && (
-            <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>
-              Keyakinan: {(result.violation.confidence * 100).toFixed(1)}%
-            </p>
-          )}
-          <img
-            src={result.violation.photoPath}
-            alt="laporan"
-            style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
-          />
-        </div>
+        </form>
       )}
-    </form>
+
+      {/* Camera tab */}
+      {activeTab === "camera" && (
+        <LiveCameraDetection
+          onViolationDetected={onDone}
+          defaultSource={defaultSource as "USER" | "JUKIR"}
+        />
+      )}
+    </div>
   );
 }

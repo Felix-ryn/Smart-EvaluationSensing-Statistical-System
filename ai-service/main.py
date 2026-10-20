@@ -12,8 +12,8 @@ from fastapi import FastAPI, File, UploadFile
 from ultralytics import YOLO
 
 MODEL_PATH = os.environ.get("MODEL_PATH", r"C:\Smart-EvaluationSensing-Statistical-System\models\best.pt")
-CONF = float(os.environ.get("CONF", "0.5"))
-LOW_CONF = float(os.environ.get("LOW_CONF", "0.3"))
+CONF = float(os.environ.get("CONF", "0.5"))  # Same threshold untuk semua (upload + live camera)
+LOW_CONF = float(os.environ.get("LOW_CONF", "0.5"))  # Changed: 0.3 → 0.5 (match CONF)
 VIDEO_FRAMES = int(os.environ.get("VIDEO_FRAMES", "8"))  # frames sampled from a video
 
 app = FastAPI(title="SESS AI")

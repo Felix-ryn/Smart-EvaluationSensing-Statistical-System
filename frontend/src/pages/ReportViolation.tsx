@@ -2,12 +2,12 @@ import { ViolationForm } from "./ViolationForm";
 
 export function ReportViolation() {
   return (
-    <div>
-      <div className="page-header">Laporkan Pelanggaran Parkir</div>
-      <div className="card" style={{ maxWidth: 480 }}>
-        <p style={{ marginTop: 0, color: "var(--muted)" }}>
-          Ambil atau unggah foto/video area parkir. Sistem akan menganalisis pelanggaran secara otomatis.
-        </p>
+    <div className="page">
+      <header className="page-header">
+        <h1>Laporkan Pelanggaran Parkir</h1>
+        <p>Ambil foto/video atau gunakan kamera live untuk melaporkan pelanggaran parkir.</p>
+      </header>
+      <div className="card">
         <ViolationForm />
       </div>
     </div>
