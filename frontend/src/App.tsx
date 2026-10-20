@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
-import { AdminLayout, JukirLayout, UserLayout } from "./layouts";
+import { AdminLayout, JukirLayout, PublicUserLayout } from "./layouts";
 import { Placeholder } from "./pages/Placeholder";
 import { Login } from "./pages/Login";
 import { FindParking } from "./pages/FindParking";
@@ -17,7 +17,7 @@ import { AreaScan } from "./pages/admin/AreaScan";
 import { ReportViolation } from "./pages/ReportViolation";
 import { Chatbot } from "./pages/Chatbot";
 import { JukirDashboard } from "./pages/jukir/Dashboard";
-import { UserDashboard } from "./pages/user/Dashboard";
+import { TrendPublicPage } from "./pages/TrendPublicPage";
 import { JukirTransactions } from "./pages/jukir/Transactions";
 import { JukirPayment } from "./pages/jukir/Payment";
 import { JukirSetoran } from "./pages/jukir/Setoran";
@@ -55,7 +55,14 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        {/* Public Pages - with sidebar menu (no auth required) */}
+        <Route path="/" element={<PublicUserLayout />}>
+          <Route index element={<TrendPublicPage />} />
+          <Route path="find-parking" element={<FindParking />} />
+          <Route path="report-violation" element={<ReportViolation />} />
+          <Route path="chatbot" element={<Chatbot />} />
+        </Route>
+
         <Route path="/login" element={<Login />} />
 
         {/* Admin Routes */}
@@ -89,18 +96,7 @@ export default function App() {
           <Route path="traffic" element={<JukirTraffic />} />
         </Route>
 
-        {/* User Routes */}
-        <Route path="/user" element={<UserLayout />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<RequireAuth><UserDashboard /></RequireAuth>} />
-          <Route path="home" element={<Placeholder title="Home" phase="selanjutnya" />} />
-          <Route path="find-parking" element={<FindParking />} />
-          <Route path="my-transactions" element={<Placeholder title="Transaksi Saya" phase="selanjutnya" />} />
-          <Route path="report-violation" element={<ReportViolation />} />
-          <Route path="chatbot" element={<Chatbot />} />
-        </Route>
-
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
   );

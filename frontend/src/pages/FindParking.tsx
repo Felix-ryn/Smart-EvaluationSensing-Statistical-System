@@ -32,19 +32,23 @@ export function FindParking() {
   if (error) return <p style={{ color: "crimson" }}>{error} — <Link to="/login">login?</Link></p>;
 
   return (
-    <div>
-      <h1>Find Parking</h1>
+    <div className="page">
+      <div className="page-header">Cari Parkir</div>
       {areas.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
+        <div className="card" style={{ marginBottom: 16 }}>
           <ParkingMap areas={areas} />
         </div>
       )}
-      {areas.length === 0 && <p>Belum ada area parkir tersedia.</p>}
+      {areas.length === 0 && (
+        <div className="card">
+          <p style={{ color: "var(--muted)", margin: 0 }}>Belum ada area parkir tersedia.</p>
+        </div>
+      )}
       <div style={{ display: "grid", gap: 12 }}>
         {areas.map((a) => (
-          <div key={a.id} style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16 }}>
+          <div key={a.id} className="card">
             <h3 style={{ margin: 0 }}>{a.name}</h3>
-            <p style={{ margin: "4px 0", color: "#666" }}>{a.location}</p>
+            <p style={{ margin: "4px 0", color: "var(--muted)" }}>{a.location}</p>
             <p style={{ margin: 0 }}>
               Tersedia <strong>{a.available}</strong> dari {a.capacity} kapasitas{" "}
               ({a.vehicleType === "motorcycle" ? "motor" : "mobil"})

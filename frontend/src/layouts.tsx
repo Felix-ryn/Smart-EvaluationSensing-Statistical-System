@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -6,6 +6,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  LogIn,
   type LucideIcon,
   ParkingSquare,
   Coins,
@@ -45,11 +46,10 @@ const menuConfig = {
     { to: "/jukir/traffic", label: "Traffic Area", icon: Activity },
   ],
   USER: [
-    { to: "/user/dashboard", label: "Tren & Jam Sibuk", icon: LayoutDashboard },
-    { to: "/user/find-parking", label: "Cari Parkir", icon: Search },
-    { to: "/user/my-transactions", label: "Transaksi Saya", icon: CreditCard },
-    { to: "/user/report-violation", label: "Lapor Pelanggaran", icon: AlertTriangle },
-    { to: "/user/chatbot", label: "Chat Bot Parkir", icon: MessageCircle },
+    { to: "/", label: "Tren & Jam Sibuk", icon: LayoutDashboard },
+    { to: "/find-parking", label: "Cari Parkir", icon: Search },
+    { to: "/report-violation", label: "Lapor Pelanggaran", icon: AlertTriangle },
+    { to: "/chatbot", label: "Chat Bot Parkir", icon: MessageCircle },
   ],
 };
 
@@ -170,6 +170,49 @@ function Layout({ brand, title, menuItems }: LayoutProps) {
 }
 
 // ================================================
+// Public Header (untuk halaman publik tanpa auth)
+// ================================================
+function PublicHeader() {
+  const nav = useNavigate();
+  return (
+    <header className="app-header">
+      <div className="header-left">
+        <h1 className="page-title">Smart Street Parking</h1>
+        <span className="page-subtitle">Parkir Aman, Hidup Lebih Mudah</span>
+      </div>
+      <div className="header-right">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => nav("/login")}
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <LogIn size={18} />
+          Masuk
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// ================================================
+// Public Layout (untuk halaman publik tanpa auth)
+// ================================================
+function PublicLayout({ menuItems }: { menuItems: MenuItem[] }) {
+  return (
+    <div className="lms-app">
+      <Sidebar brand="Smart Street Parking" menuItems={menuItems} />
+      <PublicHeader />
+      <div className="lms-container">
+        <main className="main-content">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ================================================
 // Role-based Layouts
 // ================================================
 export function AdminLayout() {
@@ -192,11 +235,9 @@ export function JukirLayout() {
   );
 }
 
-export function UserLayout() {
+export function PublicUserLayout() {
   return (
-    <Layout
-      brand="Smart Street Parking"
-      title="Smart Parking"
+    <PublicLayout
       menuItems={menuConfig.USER}
     />
   );
@@ -221,8 +262,6 @@ export function AppLayout() {
       return <AdminLayout />;
     case "JUKIR":
       return <JukirLayout />;
-    case "USER":
-      return <UserLayout />;
     default:
       return <AdminLayout />;
   }

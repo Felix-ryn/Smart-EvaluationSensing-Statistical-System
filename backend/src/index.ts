@@ -30,9 +30,8 @@ app.use("/api/auth", authRouter);
 // Public read-only: pengguna anonim bisa melihat area tanpa login.
 app.use("/api/areas", areasRouter);
 app.use("/api/transactions", transactionsRouter);
-// requireAdmin dipindah ke level route (GET /) agar /dashboard/trend
-// tetap bisa diakses role USER & JUKIR. Trend hanya berisi jumlah kendaraan.
-app.use("/api/dashboard", requireAuth, dashboardRouter);
+// /dashboard/trend publik (no auth). POST / (admin summary) perlu auth di dalam router.
+app.use("/api/dashboard", dashboardRouter);
 // requireAuth WAJIB untuk seluruh endpoint jukir karena guard di dalam router
 // (requireAdmin/requireJukir/requireJukirOrAdmin) membaca req.user.
 app.use("/api/jukir", requireAuth, jukirRouter);

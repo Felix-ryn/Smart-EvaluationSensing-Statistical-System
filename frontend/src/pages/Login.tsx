@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ParkingSquare, ShieldCheck, User as UserIcon } from "lucide-react";
+import { ParkingSquare, ShieldCheck } from "lucide-react";
 import { useAuth, type User } from "../contexts/AuthContext";
 
 const HOME_BY_ROLE: Record<User["role"], string> = {
@@ -13,7 +13,6 @@ const HOME_BY_ROLE: Record<User["role"], string> = {
 const TABS = [
   { role: "ADMIN" as const, label: "Admin", icon: ShieldCheck, email: "admin@sess.local" },
   { role: "JUKIR" as const, label: "Juru Parkir", icon: ParkingSquare, email: "jukir.budi@sess.local" },
-  { role: "USER" as const, label: "Pengguna", icon: UserIcon, email: "user@sess.local" },
 ];
 
 export function Login() {
