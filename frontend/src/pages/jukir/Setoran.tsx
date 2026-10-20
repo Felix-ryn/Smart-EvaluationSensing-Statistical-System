@@ -20,6 +20,8 @@ interface SetoranData {
   jukirSharePercent: number;
   jukirShareAmount?: number;
   netSetoranAmount: number;
+  cashAmount?: number;
+  qrisAmount?: number;
   status: "PENDING" | "APPROVED" | "REJECTED";
   approvedAt?: string;
   adminNote?: string;
@@ -39,15 +41,23 @@ export function JukirSetoran() {
   const fetchSetoran = async () => {
     try {
       const today = new Date().toISOString().split("T")[0];
+      const [dailyResult, historyResult] = await Promise.allSettled([
+        apiClient.get(`/jukir/setoran/daily?date=${today}`),
+        apiClient.get("/jukir/setoran/history?limit=20"),
+      ]);
 
-      const currentResponse = await apiClient.get(`/jukir/setoran/daily?date=${today}`);
-      if (currentResponse.data.success) {
-        setSetoranData(currentResponse.data.data);
+      if (dailyResult.status === "fulfilled") {
+        if (dailyResult.value.data.success) setSetoranData(dailyResult.value.data.data);
+      } else {
+        setSetoranData(null);
+        console.error("Error fetching daily setoran:", dailyResult.reason);
       }
 
-      const historyResponse = await apiClient.get("/jukir/setoran/history?limit=20");
-      if (historyResponse.data.success) {
-        setHistory(historyResponse.data.data);
+      if (historyResult.status === "fulfilled") {
+        if (historyResult.value.data.success) setHistory(historyResult.value.data.data);
+      } else {
+        setHistory([]);
+        console.error("Error fetching setoran history:", historyResult.reason);
       }
     } catch (error) {
       console.error("Error fetching setoran:", error);
@@ -102,6 +112,9 @@ export function JukirSetoran() {
       <header className="page-header">
         <h1><Wallet className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Pajak &amp; Setoran Jukir</h1>
         <p>Pajak otomatis dipotong dari pendapatan bruto berdasarkan MOU aktif</p>
+        <p className="text-muted" style={{ marginTop: "0.35rem" }}>
+          QRIS masuk langsung ke admin. Setoran fisik yang diserahkan jukir dihitung dari komponen CASH transaksi <strong>COMPLETED</strong> hari ini.
+        </p>
       </header>
 
       <div className="grid grid-2">
@@ -124,10 +137,20 @@ export function JukirSetoran() {
                 <span className="stat-large">{setoranData.totalTransactions} kendaraan</span>
               </div>
 
-              <div className="summary-divider">
-                <label>Pendapatan Bruto</label>
-                <span className="currency-large">{formatCurrency(setoranData.grossAmount)}</span>
-              </div>
+                <div className="summary-divider">
+                  <label>Pendapatan Bruto</label>
+                  <span className="currency-large">{formatCurrency(setoranData.grossAmount)}</span>
+                </div>
+
+                <div className="calc-row">
+                  <span>Masuk via CASH</span>
+                  <span>{formatCurrency(setoranData.cashAmount || 0)}</span>
+                </div>
+
+                <div className="calc-row">
+                  <span>Tercatat via QRIS</span>
+                  <span>{formatCurrency(setoranData.qrisAmount || 0)}</span>
+                </div>
 
               <div className="calculation-section">
                 <h3>Distribusi</h3>
@@ -143,7 +166,7 @@ export function JukirSetoran() {
                 </div>
 
                 <div className="calc-total">
-                  <span>SETORAN HARUS DISERAHKAN:</span>
+                  <span>SETORAN FISIK (DARI CASH):</span>
                   <span className="amount-primary">{formatCurrency(setoranData.netSetoranAmount)}</span>
                 </div>
               </div>
@@ -206,6 +229,7 @@ export function JukirSetoran() {
 
       <div className="card mt-6">
         <h2><ClipboardList className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Riwayat Setoran</h2>
+        <p className="text-muted" style={{ marginBottom: "0.8rem" }}>Menampilkan riwayat setoran akun jukir ini (lintas area penugasan).</p>
         <table className="table table-striped">
           <thead>
             <tr>
@@ -225,7 +249,7 @@ export function JukirSetoran() {
                   <td>{item.totalTransactions}</td>
                   <td>{formatCurrency(item.grossAmount)}</td>
                   <td>{formatCurrency(item.taxAmount || 0)}</td>
-                  <td>{formatCurrency(Math.max(0, item.grossAmount - (item.taxAmount || 0)))}</td>
+                  <td>{formatCurrency(item.netSetoranAmount ?? Math.max(0, (item.cashAmount || 0) - (item.taxAmount || 0)))}</td>
                   <td>{getStatusBadge(item.status)}</td>
                 </tr>
               ))

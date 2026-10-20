@@ -41,6 +41,14 @@ enum PaymentMethod {
   QRIS
 }
 
+enum QrisPaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  CANCELLED
+}
+
 enum ViolationStatus {
   PENDING
   VALID
@@ -135,6 +143,31 @@ model Transaction {
   jukir   User?            @relation(fields: [jukirId], references: [id], onDelete: SetNull, name: "TransactionJukir")
   customer User?           @relation(fields: [userId], references: [id], name: "TransactionCustomer")
   userId  String?          @db.VarChar(255)
+  qrisPayments QrisPayment[]
+}
+
+model QrisPayment {
+  id                String            @id @default(uuid())
+  transactionId     String            @db.Uuid
+  externalId        String            @unique
+  provider          String            @default("XENDIT")
+  providerPaymentId String?
+  amount            Int
+  areaId            String
+  jukirId           String?
+  status            QrisPaymentStatus @default(PENDING)
+  qrString          String?
+  qrCodeUrl         String?
+  expiresAt         DateTime?
+  paidAt            DateTime?
+  rawPayload        Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId, createdAt])
+  @@index([status, createdAt])
 }
 
 // Aturan MOU / pajak / bagian pengelola + tarif parkir (configurable).
@@ -189,6 +222,8 @@ model SetoranEntry {
   
   totalTransactions Int          @default(0)  // Jumlah transaksi hari ini
   grossAmount       Int          @default(0)  // Total pendapatan sebelum dipotong
+  cashAmount        Int          @default(0)  // Uang fisik yang dipegang jukir
+  qrisAmount        Int          @default(0)  // Uang QRIS yang masuk langsung ke admin
   
   taxPercent        Float        @default(0)  // Pajak dari mou rule (%)
   taxAmount         Int?                      // Pajak pengelola (amount)

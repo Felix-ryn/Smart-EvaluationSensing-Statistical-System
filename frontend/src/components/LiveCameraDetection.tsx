@@ -31,7 +31,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const detectionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [isDetecting, setIsDetecting] = useState(false);
   const [areas, setAreas] = useState<Area[]>([]);

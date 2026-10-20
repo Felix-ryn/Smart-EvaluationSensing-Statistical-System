@@ -115,6 +115,23 @@ export function JukirPayment() {
       return;
     }
 
+    if (paymentMethod === "QRIS") {
+      try {
+        const statusResponse = await apiClient.get(`/jukir/qris/status/${transaction.id}`);
+        if (statusResponse.data.success && statusResponse.data.data?.isPaid) {
+          alert("Pembayaran QRIS sudah diterima. Status transaksi akan diperbarui otomatis.");
+          fetchTransaction();
+          navigate("/jukir/transactions");
+        } else {
+          alert("Pembayaran QRIS belum terkonfirmasi. Minta pelanggan selesaikan scan/pay terlebih dahulu.");
+        }
+      } catch (error) {
+        console.error("QRIS status error:", error);
+        alert("Gagal mengecek status QRIS");
+      }
+      return;
+    }
+
     if (!confirm(`Konfirmasi pembayaran ${paymentMethod} untuk ${transaction.transactionCode}?`)) {
       return;
     }
