@@ -1,19 +1,71 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Hourglass, Info, Printer, QrCode, Smartphone } from "lucide-react";
 import { apiClient } from "../../api/client";
 
-export function JukirQris() {
-  const [loading, setLoading] = useState(false);
-  const [selectedTxId, setSelectedTxId] = useState<string>("");
-  const [qrData, setQrData] = useState<any>(null);
-  const [checkStatusTxId, setCheckStatusTxId] = useState<string>("");
-  const [qrisStatus, setQrisStatus] = useState<any>(null);
+interface TransactionItem {
+  id: string;
+  transactionCode: string;
+  amount?: number | null;
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  checkOut?: string | Date | null;
+}
 
-  const sampleTransactions = [
-    { id: "tx1", code: "PARK-00001", amount: 5000 },
-    { id: "tx2", code: "PARK-00002", amount: 8000 },
-    { id: "tx3", code: "PARK-00003", amount: 12000 },
-  ];
+interface QrData {
+  transactionCode: string;
+  amount: number;
+  merchantId: string;
+  qrCodeUrl: string;
+  expiresAt: string;
+}
+
+interface QrisStatus {
+  transactionCode: string;
+  status: string;
+  paymentMethod?: string | null;
+  amount?: number | null;
+  paymentTime?: string | null;
+  isPaid: boolean;
+}
+
+export function JukirQris() {
+  const [loadingGenerate, setLoadingGenerate] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [selectedTxId, setSelectedTxId] = useState<string>("");
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [qrData, setQrData] = useState<QrData | null>(null);
+  const [checkStatusTxId, setCheckStatusTxId] = useState<string>("");
+  const [qrisStatus, setQrisStatus] = useState<QrisStatus | null>(null);
+
+  useEffect(() => {
+    fetchEligibleTransactions();
+  }, []);
+
+  const fetchEligibleTransactions = async () => {
+    try {
+      setLoadingTransactions(true);
+      const response = await apiClient.get("/transactions");
+
+      if (response.data.success) {
+        setTransactions(response.data.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch transactions for QRIS:", error);
+      alert("Gagal memuat daftar transaksi");
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  const eligibleTransactions = useMemo(
+    () => transactions.filter((tx) => tx.status === "ACTIVE" && !!tx.amount && !!tx.checkOut),
+    [transactions],
+  );
+
+  const selectedTransaction = useMemo(
+    () => eligibleTransactions.find((tx) => tx.id === selectedTxId),
+    [eligibleTransactions, selectedTxId],
+  );
 
   const generateQRCode = async () => {
     if (!selectedTxId) {
@@ -21,7 +73,7 @@ export function JukirQris() {
       return;
     }
 
-    setLoading(true);
+    setLoadingGenerate(true);
     try {
       const response = await apiClient.post("/jukir/qris/generate", {
         transactionId: selectedTxId,
@@ -32,11 +84,12 @@ export function JukirQris() {
       } else {
         throw new Error(response.data.message || "Failed to generate QR");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("QRIS generation error:", error);
-      alert("Gagal generate QR Code");
+      const message = error?.response?.data?.message || "Gagal generate QR Code";
+      alert(message);
     } finally {
-      setLoading(false);
+      setLoadingGenerate(false);
     }
   };
 
@@ -46,7 +99,7 @@ export function JukirQris() {
       return;
     }
 
-    setLoading(true);
+    setLoadingStatus(true);
     try {
       const response = await apiClient.get(`/jukir/qris/status/${checkStatusTxId}`);
       if (response.data.success) {
@@ -54,11 +107,12 @@ export function JukirQris() {
       } else {
         throw new Error(response.data.message || "Failed to check status");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Status check error:", error);
-      alert("Gagal cek status pembayaran");
+      const message = error?.response?.data?.message || "Gagal cek status pembayaran";
+      alert(message);
     } finally {
-      setLoading(false);
+      setLoadingStatus(false);
     }
   };
 
@@ -69,57 +123,61 @@ export function JukirQris() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1><Smartphone className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Transaksi QRIS</h1>
+        <h1>
+          <Smartphone className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Transaksi QRIS
+        </h1>
         <p>Generate & monitor pembayaran via QRIS</p>
       </header>
 
       <div className="grid grid-2">
-        {/* Left Column - Generate QR */}
         <div className="card">
-          <h2><QrCode className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Generate QR Code</h2>
-          
+          <h2>
+            <QrCode className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Generate QR Code
+          </h2>
+
           <div className="form-section">
-            <label>Pilih Transaksi</label>
-            <select 
+            <label htmlFor="qris-transaction-select">Pilih Transaksi</label>
+            <select
+              id="qris-transaction-select"
               className="input"
               value={selectedTxId}
               onChange={(e) => setSelectedTxId(e.target.value)}
+              disabled={loadingTransactions}
             >
-              <option value="">-- Pilih Transaksi --</option>
-              {sampleTransactions.map((tx) => (
+              <option value="">
+                {loadingTransactions ? "Memuat transaksi..." : "-- Pilih Transaksi Eligible --"}
+              </option>
+              {eligibleTransactions.map((tx) => (
                 <option key={tx.id} value={tx.id}>
-                  {tx.code} - Rp {tx.amount.toLocaleString("id-ID")}
+                  {tx.transactionCode} - Rp {(tx.amount || 0).toLocaleString("id-ID")}
                 </option>
               ))}
             </select>
 
-            <button
-              className="btn btn-primary mt-4 w-100"
-              onClick={generateQRCode}
-              disabled={loading}
-            >
-              {loading ? "Generating..." : "Generate QR Code"}
+            {!loadingTransactions && eligibleTransactions.length === 0 && (
+              <p className="text-muted mt-3">Belum ada transaksi yang siap di-generate QRIS (checkout dulu).</p>
+            )}
+
+            {selectedTransaction && (
+              <p className="text-muted mt-3">
+                Transaksi dipilih: <strong>{selectedTransaction.transactionCode}</strong>
+              </p>
+            )}
+
+            <button className="btn btn-primary mt-4 w-100" onClick={generateQRCode} disabled={loadingGenerate || !selectedTxId}>
+              {loadingGenerate ? "Generating..." : "Generate QR Code"}
             </button>
           </div>
 
           {qrData && (
             <div className="qr-display mt-6">
               <h3>QR Code untuk Pembayaran</h3>
-              
+
               <div className="qr-container">
                 <div className="qr-placeholder">
                   <div className="qr-code-large">
-                    {qrData.qrCodeUrl && (
-                      <img src={qrData.qrCodeUrl} alt="QR Code" />
-                    )}
+                    {qrData.qrCodeUrl && <img src={qrData.qrCodeUrl} alt={`QR ${qrData.transactionCode}`} width={220} height={220} />}
                   </div>
-                  
-                  {!qrData.qrCodeUrl && (
-                    <div className="qr-mock">
-                      <div className="qr-pattern"></div>
-                      <span>QR Code Display</span>
-                    </div>
-                  )}
                 </div>
 
                 <div className="qr-info">
@@ -146,10 +204,7 @@ export function JukirQris() {
                 <button className="btn btn-success w-100" onClick={handlePrintQR}>
                   <Printer size={16} strokeWidth={2} aria-hidden="true" /> Print QR Code
                 </button>
-                <button 
-                  className="btn btn-outline w-100 mt-3"
-                  onClick={() => setQrData(null)}
-                >
+                <button className="btn btn-outline w-100 mt-3" onClick={() => setQrData(null)}>
                   Generate Baru
                 </button>
               </div>
@@ -157,13 +212,15 @@ export function JukirQris() {
           )}
         </div>
 
-        {/* Right Column - Check Payment Status */}
         <div className="card">
-          <h2><Check className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Cek Status Pembayaran</h2>
-          
+          <h2>
+            <Check className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Cek Status Pembayaran
+          </h2>
+
           <div className="form-section">
-            <label>ID Transaksi</label>
+            <label htmlFor="qris-check-id">ID Transaksi</label>
             <input
+              id="qris-check-id"
               type="text"
               className="input"
               placeholder="Masukkan ID transaksi"
@@ -171,12 +228,8 @@ export function JukirQris() {
               onChange={(e) => setCheckStatusTxId(e.target.value)}
             />
 
-            <button
-              className="btn btn-outline mt-4 w-100"
-              onClick={checkPaymentStatus}
-              disabled={loading}
-            >
-              {loading ? "Checking..." : "Check Status"}
+            <button className="btn btn-outline mt-4 w-100" onClick={checkPaymentStatus} disabled={loadingStatus}>
+              {loadingStatus ? "Checking..." : "Check Status"}
             </button>
           </div>
 
@@ -184,9 +237,13 @@ export function JukirQris() {
             <div className="status-display mt-6">
               <div className={`status-badge ${qrisStatus.isPaid ? "badge-success" : "badge-warning"}`}>
                 {qrisStatus.isPaid ? (
-                  <><Check size={14} strokeWidth={2.4} aria-hidden="true" /> PAID</>
+                  <>
+                    <Check size={14} strokeWidth={2.4} aria-hidden="true" /> PAID
+                  </>
                 ) : (
-                  <><Hourglass size={14} strokeWidth={2} aria-hidden="true" /> Pending</>
+                  <>
+                    <Hourglass size={14} strokeWidth={2} aria-hidden="true" /> Pending
+                  </>
                 )}
               </div>
 
@@ -216,10 +273,7 @@ export function JukirQris() {
               </div>
 
               {qrisStatus.isPaid && (
-                <button 
-                  className="btn btn-primary w-100 mt-4"
-                  onClick={() => window.location.reload()}
-                >
+                <button className="btn btn-primary w-100 mt-4" onClick={() => window.location.reload()}>
                   Refresh Page
                 </button>
               )}
@@ -227,7 +281,9 @@ export function JukirQris() {
           )}
 
           <div className="info-box mt-6">
-            <h3><Info className="title-icon" size={16} strokeWidth={1.8} aria-hidden="true" /> Info QRIS</h3>
+            <h3>
+              <Info className="title-icon" size={16} strokeWidth={1.8} aria-hidden="true" /> Info QRIS
+            </h3>
             <ul>
               <li>QR Code valid selama 30 menit</li>
               <li>Pelanggan bisa scan dengan e-wallet/bank app</li>
