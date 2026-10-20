@@ -8,7 +8,7 @@ import { getActiveMou, mouToParkingRules } from "../lib/business.js";
 export const transactionsRouter = Router();
 
 const checkInSchema = z.object({
-  areaId: z.string().min(1),
+  areaId: z.string().min(1).optional(),
   jukirId: z.string().optional(),
   vehicleType: z.enum(["motorcycle", "car"]).default("motorcycle"),
   plateNumber: z.string().trim().min(1).max(15).optional(),
@@ -19,13 +19,63 @@ const paySchema = z.object({
 });
 
 // Helper: generate Transaction ID unik "PARK-XXXXX".
+// NOTE: jangan pakai orderBy string desc karena saat kode > 5 digit bisa salah urut lexical.
 async function nextCode(): Promise<string> {
-  const last = await prisma.transaction.findFirst({
-    orderBy: { transactionCode: "desc" },
+  const allCodes = await prisma.transaction.findMany({
     select: { transactionCode: true },
   });
-  const num = last ? parseInt(last.transactionCode.replace(/\D/g, ""), 10) || 0 : 0;
-  return `PARK-${String(num + 1).padStart(5, "0")}`;
+
+  const maxNumber = allCodes.reduce((max, row) => {
+    const parsed = Number.parseInt(row.transactionCode.replace(/\D/g, ""), 10);
+    if (Number.isNaN(parsed)) return max;
+    return parsed > max ? parsed : max;
+  }, 0);
+
+  return `PARK-${String(maxNumber + 1).padStart(5, "0")}`;
+}
+
+async function createTransactionWithRetry(data: {
+  areaId: string;
+  jukirId: string | null;
+  vehicleType: "motorcycle" | "car";
+  plateNumber: string | null;
+}) {
+  const maxAttempts = 5;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const transactionCode = await nextCode();
+
+    try {
+      return await prisma.transaction.create({
+        data: {
+          transactionCode,
+          areaId: data.areaId,
+          jukirId: data.jukirId,
+          vehicleType: data.vehicleType,
+          plateNumber: data.plateNumber,
+        },
+        include: {
+          area: { select: { name: true } },
+          jukir: { select: { name: true, email: true } },
+        },
+      });
+    } catch (error: any) {
+      const target = error?.meta?.target;
+      const targetHasTransactionCode = Array.isArray(target)
+        ? target.includes("transactionCode")
+        : typeof target === "string"
+          ? target.includes("transactionCode")
+          : false;
+
+      const isUniqueCodeCollision = error?.code === "P2002" && targetHasTransactionCode;
+
+      if (!isUniqueCodeCollision || attempt === maxAttempts) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("Failed to generate unique transaction code");
 }
 
 // POST /api/transactions — kendaraan masuk (buat transaksi aktif).
@@ -33,13 +83,27 @@ async function nextCode(): Promise<string> {
 transactionsRouter.post("/", requireAuth, async (req, res, next) => {
   try {
     const { areaId, jukirId, vehicleType, plateNumber } = checkInSchema.parse(req.body);
-    const area = await prisma.parkingArea.findUnique({ where: { id: areaId } });
+
+    const effectiveAreaId =
+      req.user?.role === "JUKIR"
+        ? req.user.areaId
+        : areaId;
+
+    if (!effectiveAreaId) {
+      return res.status(400).json({
+        success: false,
+        message: "Area wajib diisi",
+        code: "AREA_REQUIRED",
+      });
+    }
+
+    const area = await prisma.parkingArea.findUnique({ where: { id: effectiveAreaId } });
     if (!area) {
       return res.status(404).json({ success: false, message: "Area tidak ditemukan", code: "NOT_FOUND" });
     }
     
     // If not admin, ensure user is assigned to this area
-    if (req.user?.role === "JUKIR" && req.user.areaId !== areaId) {
+    if (req.user?.role === "JUKIR" && req.user.areaId !== effectiveAreaId) {
       return res.status(403).json({ 
         success: false, 
         message: "You can only create transactions for your assigned area", 
@@ -47,15 +111,11 @@ transactionsRouter.post("/", requireAuth, async (req, res, next) => {
       });
     }
     
-    const transactionCode = await nextCode();
-    const tx = await prisma.transaction.create({
-      data: {
-        transactionCode,
-        areaId,
-        jukirId: jukirId ?? null,
-        vehicleType,
-        plateNumber: plateNumber ? plateNumber.toUpperCase() : null,
-      },
+    const tx = await createTransactionWithRetry({
+      areaId: effectiveAreaId,
+      jukirId: jukirId ?? null,
+      vehicleType,
+      plateNumber: plateNumber ? plateNumber.toUpperCase() : null,
     });
     res.status(201).json({ success: true, data: tx });
   } catch (e) {
@@ -64,7 +124,7 @@ transactionsRouter.post("/", requireAuth, async (req, res, next) => {
 });
 
 // GET /api/transactions/:code — cari transaksi via Transaction ID (untuk QR).
-transactionsRouter.get("/:code", async (req, res, next) => {
+transactionsRouter.get("/:code", requireAuth, async (req, res, next) => {
   try {
     const tx = await prisma.transaction.findUnique({
       where: { transactionCode: req.params.code },
@@ -73,6 +133,35 @@ transactionsRouter.get("/:code", async (req, res, next) => {
     if (!tx) {
       return res.status(404).json({ success: false, message: "Transaksi tidak ditemukan", code: "NOT_FOUND" });
     }
+
+    // Jukir only allowed to access transaction in assigned area
+    if (req.user?.role === "JUKIR") {
+      if (!req.user.areaId) {
+        return res.status(403).json({
+          success: false,
+          message: "Jukir must be assigned an area first",
+          code: "AREA_REQUIRED",
+        });
+      }
+
+      if (tx.areaId !== req.user.areaId) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only access transactions in your assigned area",
+          code: "FORBIDDEN_AREA",
+        });
+      }
+    }
+
+    // Regular user only allowed to access own transaction
+    if (req.user?.role === "USER" && tx.userId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only access your own transactions",
+        code: "FORBIDDEN",
+      });
+    }
+
     res.json({ success: true, data: tx });
   } catch (e) {
     next(e);
@@ -87,8 +176,15 @@ transactionsRouter.get("/", requireAuth, async (req, res, next) => {
     
     let whereClause = {};
     
-    // Filter by role: Jukir hanya bisa lihat transaksi di area mereka
-    if (req.user?.role === "JUKIR" && req.user.areaId) {
+    // Filter by role: Jukir WAJIB area assignment dan hanya bisa lihat area sendiri
+    if (req.user?.role === "JUKIR") {
+      if (!req.user.areaId) {
+        return res.status(403).json({
+          success: false,
+          message: "Jukir must be assigned an area first",
+          code: "AREA_REQUIRED",
+        });
+      }
       whereClause = { ...whereClause, areaId: req.user.areaId };
     } else if (areaId) {
       whereClause = { ...whereClause, areaId };

@@ -15,6 +15,7 @@ interface Transaction {
   id: string;
   transactionCode: string;
   areaId: string;
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
   vehicleType?: string | null;
   plateNumber?: string | null;
   checkIn: Date;
@@ -30,25 +31,27 @@ export function JukirPayment() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
-  const txId = searchParams.get("tx");
+  const txCode = searchParams.get("tx");
   const [loading, setLoading] = useState(true);
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "QRIS">("CASH");
   const [processing, setProcessing] = useState(false);
   const [qr, setQr] = useState<QrData | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string>("");
 
   useEffect(() => {
-    if (!txId) {
+    if (!txCode) {
       navigate("/jukir/transactions");
       return;
     }
     fetchTransaction();
-  }, [txId]);
+  }, [txCode, navigate]);
 
   const fetchTransaction = async () => {
+    if (!txCode) return;
     try {
-      const response = await apiClient.get(`/transactions/${txId}`);
+      const response = await apiClient.get(`/transactions/${txCode}`);
       if (response.data.success) {
         setTransaction(response.data.data);
       }
@@ -60,14 +63,32 @@ export function JukirPayment() {
   };
 
   const selectMethod = (method: "CASH" | "QRIS") => {
+    if (!transaction) return;
+
+    const isCompleted = transaction.status === "COMPLETED";
+    const hasCheckoutAmount = transaction.amount != null;
+
+    if (method === "QRIS" && isCompleted) {
+      alert("Transaksi ini sudah dibayar (COMPLETED)");
+      return;
+    }
+
+    if (method === "QRIS" && !hasCheckoutAmount) {
+      alert("Checkout dulu sebelum generate QRIS");
+      return;
+    }
+
     setPaymentMethod(method);
-    if (method === "QRIS" && !qr && transaction) generateQr();
+    setQrError("");
+    if (method === "CASH") setQr(null);
+    if (method === "QRIS" && !qr) generateQr();
   };
 
   const generateQr = async () => {
     if (!transaction) return;
     setQrLoading(true);
     try {
+      setQrError("");
       const response = await apiClient.post("/jukir/qris/generate", {
         transactionId: transaction.id,
       });
@@ -76,9 +97,11 @@ export function JukirPayment() {
       } else {
         throw new Error(response.data.message || "Gagal generate QR");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("QR generate error:", error);
-      alert("Gagal generate QR Code");
+      const message = error?.response?.data?.message || "Gagal generate QR Code";
+      setQrError(message);
+      alert(message);
     } finally {
       setQrLoading(false);
     }
@@ -123,6 +146,9 @@ export function JukirPayment() {
   if (!transaction) {
     return <div className="page"><div className="empty-state">Transaksi tidak ditemukan</div></div>;
   }
+
+  const isCompleted = transaction.status === "COMPLETED";
+  const hasCheckoutAmount = transaction.amount != null;
 
   const formatTime = (date: Date) => {
     return new Date(date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
@@ -200,11 +226,22 @@ export function JukirPayment() {
         {/* Right Column - Payment Options */}
         <div className="card">
           <h2><CreditCard className="title-icon" size={18} strokeWidth={1.8} aria-hidden="true" /> Metode Pembayaran</h2>
+
+          {isCompleted && (
+            <div className="alert alert-success mb-4">Transaksi ini sudah dibayar (COMPLETED).</div>
+          )}
+
+          {!isCompleted && !hasCheckoutAmount && (
+            <div className="alert alert-warning mb-4">Checkout dulu agar nominal pembayaran muncul.</div>
+          )}
+
+          {!!qrError && <div className="alert alert-danger mb-4">{qrError}</div>}
           
           <div className="payment-methods">
             <button
               className={`payment-option ${paymentMethod === "CASH" ? "active" : ""}`}
               onClick={() => selectMethod("CASH")}
+              disabled={isCompleted || !hasCheckoutAmount}
             >
               <div className="payment-icon"><Banknote size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="payment-info">
@@ -219,6 +256,7 @@ export function JukirPayment() {
             <button
               className={`payment-option ${paymentMethod === "QRIS" ? "active" : ""}`}
               onClick={() => selectMethod("QRIS")}
+              disabled={isCompleted || !hasCheckoutAmount}
             >
               <div className="payment-icon"><Smartphone size={20} strokeWidth={1.8} aria-hidden="true" /></div>
               <div className="payment-info">
@@ -263,7 +301,7 @@ export function JukirPayment() {
             <button
               className="btn btn-primary w-100"
               onClick={handlePayment}
-              disabled={processing}
+              disabled={processing || isCompleted || !hasCheckoutAmount}
             >
               {processing ? "Processing..." : "Selesaikan Transaksi"}
             </button>
