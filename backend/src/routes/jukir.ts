@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { requireAuth, requireJukirOrAdmin, requireAdmin, requireJukir } from "../middleware/auth.js";
 import { getActiveMou } from "../lib/business.js";
+import { createXenditQrisPayment, isXenditEnabled } from "../services/xendit.js";
 
 export const jukirRouter = Router();
 
@@ -60,8 +61,10 @@ jukirRouter.get("/stats/dashboard", requireJukirOrAdmin, async (req, res, next) 
     const completedToday = await prisma.transaction.findMany({
       where: {
         ...whereClause,
+        ...(req.user?.role === "JUKIR" ? { jukirId: req.user.id } : {}),
         status: "COMPLETED",
-        paidAt: { gte: todayStart },
+        paidAt: { gte: todayStart, lt: todayEnd },
+        amount: { not: null },
       },
       select: { amount: true },
     });
@@ -146,11 +149,19 @@ jukirRouter.get("/setoran/daily", requireJukirOrAdmin, async (req, res, next) =>
     ]);
 
     const grossAmount = dayTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const cashAmount = dayTransactions
+      .filter((t) => t.paymentMethod === "CASH")
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    const qrisAmount = dayTransactions
+      .filter((t) => t.paymentMethod === "QRIS")
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
     const totalTransactions = dayTransactions.length;
     const taxPercent = mouRules.taxPercent || 10;
     const jukirSharePercent = mouRules.jukirSharePercent || 15;
     const taxAmount = Math.floor(grossAmount * (taxPercent / 100));
     const jukirShareAmount = Math.floor(grossAmount * (jukirSharePercent / 100));
+    // Opsi A: QRIS masuk langsung ke admin, sehingga setoran fisik jukir dihitung dari CASH.
+    const netSetoranAmount = Math.max(0, cashAmount - taxAmount);
 
     if (!setoran) {
       setoran = await prisma.setoranEntry.create({
@@ -160,6 +171,8 @@ jukirRouter.get("/setoran/daily", requireJukirOrAdmin, async (req, res, next) =>
           date: startDate,
           totalTransactions,
           grossAmount,
+          cashAmount,
+          qrisAmount,
           taxPercent,
           taxAmount,
           jukirSharePercent,
@@ -173,6 +186,8 @@ jukirRouter.get("/setoran/daily", requireJukirOrAdmin, async (req, res, next) =>
         data: {
           totalTransactions,
           grossAmount,
+          cashAmount,
+          qrisAmount,
           taxPercent,
           taxAmount,
           jukirSharePercent,
@@ -185,7 +200,10 @@ jukirRouter.get("/setoran/daily", requireJukirOrAdmin, async (req, res, next) =>
       success: true,
       data: {
         ...setoran,
-        netSetoranAmount: Math.max(0, grossAmount - taxAmount),
+        netSetoranAmount,
+        cashAmount,
+        qrisAmount,
+        settlementTarget: "ADMIN",
         breakdown: breakdownByVehicle.map((b) => ({
           vehicleType: b.vehicleType,
           count: b._count.id,
@@ -230,7 +248,7 @@ jukirRouter.post("/setoran/submit", requireJukir, async (req, res, next) => {
       data: {
         message: "Setoran berhasil disubmit untuk approval admin",
         setoranId: setoran.id,
-        confirmedAmount: Math.max(0, setoran.grossAmount - (setoran.taxAmount ?? 0)),
+        confirmedAmount: Math.max(0, (setoran.cashAmount ?? 0) - (setoran.taxAmount ?? 0)),
       },
     });
   } catch (e) {
@@ -274,12 +292,18 @@ jukirRouter.put("/setoran/:id/approve", requireAdmin, async (req, res, next) => 
 jukirRouter.get("/setoran/history", requireJukirOrAdmin, async (req, res, next) => {
   try {
     let whereClause: any = {};
+    const areaId = (req.query.areaId as string | undefined) ?? undefined;
     
-    if (req.user?.role === "JUKIR" && req.user.areaId) {
+    if (req.user?.role === "JUKIR") {
       whereClause.jukirId = req.user.id;
-      whereClause.areaId = req.user.areaId;
+      // Riwayat jukir ditampilkan lintas area agar data lama tetap terlihat
+      // walaupun saat ini jukir dipindahkan ke area baru.
+      if (areaId) whereClause.areaId = areaId;
     } else if (req.query.jukirId) {
       whereClause.jukirId = req.query.jukirId as string;
+      if (areaId) whereClause.areaId = areaId;
+    } else if (areaId) {
+      whereClause.areaId = areaId;
     }
     
     const { limit = 20, offset = 0 } = req.query as { limit?: number; offset?: number };
@@ -301,7 +325,10 @@ jukirRouter.get("/setoran/history", requireJukirOrAdmin, async (req, res, next) 
     
     res.json({
       success: true,
-      data: entries,
+      data: entries.map((row) => ({
+        ...row,
+        netSetoranAmount: Math.max(0, (row.cashAmount ?? 0) - (row.taxAmount ?? 0)),
+      })),
       pagination: { total, limit: Number(limit), offset: Number(offset) },
     });
   } catch (e) {
@@ -350,14 +377,14 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
     const [txRows, mouRules] = await Promise.all([
       prisma.transaction.findMany({
         where: txWhere,
-        select: { id: true, areaId: true, jukirId: true, paidAt: true, amount: true },
+        select: { id: true, areaId: true, jukirId: true, paidAt: true, amount: true, paymentMethod: true },
       }),
       getActiveMou(),
     ]);
 
     // Sinkronisasi otomatis SetoranEntry dari transaksi completed,
     // agar halaman admin tidak nol walau jukir belum buka halaman setoran.
-    const grouped = new Map<string, { areaId: string; jukirId: string; date: Date; count: number; gross: number }>();
+    const grouped = new Map<string, { areaId: string; jukirId: string; date: Date; count: number; gross: number; cash: number; qris: number }>();
     for (const tx of txRows) {
       if (!tx.jukirId || !tx.paidAt) continue;
       const d = new Date(tx.paidAt);
@@ -367,6 +394,8 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
       if (row) {
         row.count += 1;
         row.gross += tx.amount ?? 0;
+        if (tx.paymentMethod === "QRIS") row.qris += tx.amount ?? 0;
+        else row.cash += tx.amount ?? 0;
       } else {
         grouped.set(key, {
           areaId: tx.areaId,
@@ -374,6 +403,8 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
           date: d,
           count: 1,
           gross: tx.amount ?? 0,
+          cash: tx.paymentMethod === "QRIS" ? 0 : tx.amount ?? 0,
+          qris: tx.paymentMethod === "QRIS" ? tx.amount ?? 0 : 0,
         });
       }
     }
@@ -399,6 +430,8 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
           data: {
             totalTransactions: g.count,
             grossAmount: g.gross,
+            cashAmount: g.cash,
+            qrisAmount: g.qris,
             taxPercent,
             taxAmount,
             jukirSharePercent,
@@ -413,6 +446,8 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
             date: g.date,
             totalTransactions: g.count,
             grossAmount: g.gross,
+            cashAmount: g.cash,
+            qrisAmount: g.qris,
             taxPercent,
             taxAmount,
             jukirSharePercent,
@@ -436,10 +471,12 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
     const summary = entries.reduce(
       (acc, row) => {
         const tax = row.taxAmount ?? 0;
-        const net = Math.max(0, row.grossAmount - tax);
+        const net = Math.max(0, (row.cashAmount ?? 0) - tax);
         acc.totalEntries += 1;
         acc.totalTransactions += row.totalTransactions;
         acc.totalGross += row.grossAmount;
+        acc.totalCash += row.cashAmount ?? 0;
+        acc.totalQris += row.qrisAmount ?? 0;
         acc.totalTax += tax;
         acc.totalNetSetoran += net;
         acc.statusCounts[row.status] += 1;
@@ -449,6 +486,8 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
         totalEntries: 0,
         totalTransactions: 0,
         totalGross: 0,
+        totalCash: 0,
+        totalQris: 0,
         totalTax: 0,
         totalNetSetoran: 0,
         statusCounts: {
@@ -461,12 +500,16 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
 
     // Summary utama tetap dari transaksi completed (sumber kebenaran pendapatan).
     const totalGrossFromTx = txRows.reduce((s, t) => s + (t.amount ?? 0), 0);
+    const totalCashFromTx = txRows.filter((t) => t.paymentMethod === "CASH").reduce((s, t) => s + (t.amount ?? 0), 0);
+    const totalQrisFromTx = txRows.filter((t) => t.paymentMethod === "QRIS").reduce((s, t) => s + (t.amount ?? 0), 0);
     const totalTaxFromTx = Math.floor(totalGrossFromTx * ((mouRules.taxPercent || 10) / 100));
-    const totalNetFromTx = Math.max(0, totalGrossFromTx - totalTaxFromTx);
+    const totalNetFromTx = Math.max(0, totalCashFromTx - totalTaxFromTx);
 
     if (!status) {
       summary.totalTransactions = txRows.length;
       summary.totalGross = totalGrossFromTx;
+      summary.totalCash = totalCashFromTx;
+      summary.totalQris = totalQrisFromTx;
       summary.totalTax = totalTaxFromTx;
       summary.totalNetSetoran = totalNetFromTx;
     }
@@ -477,7 +520,7 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
         summary,
         rows: entries.map((row) => ({
           ...row,
-          netSetoranAmount: Math.max(0, row.grossAmount - (row.taxAmount ?? 0)),
+          netSetoranAmount: Math.max(0, (row.cashAmount ?? 0) - (row.taxAmount ?? 0)),
         })),
       },
     });
@@ -591,19 +634,120 @@ jukirRouter.post("/qris/generate", requireJukirOrAdmin, async (req, res, next) =
         code: "NO_AMOUNT" 
       });
     }
+
+    const existingPendingPayment = await prisma.qrisPayment.findFirst({
+      where: {
+        transactionId: transaction.id,
+        status: "PENDING",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existingPendingPayment?.qrCodeUrl) {
+      return res.json({
+        success: true,
+        data: {
+          transactionId: transaction.id,
+          transactionCode: transaction.transactionCode,
+          amount: transaction.amount,
+          merchantId: "ADMIN-MERCHANT-QRIS",
+          qrString: existingPendingPayment.qrString,
+          qrCodeUrl: existingPendingPayment.qrCodeUrl,
+          expiresAt: existingPendingPayment.expiresAt,
+          paymentProvider: existingPendingPayment.provider,
+          gatewayMode: existingPendingPayment.provider === "XENDIT" ? "LIVE" : "MOCK",
+          settlementTarget: "ADMIN",
+          areaId: transaction.areaId,
+          areaName: transaction.area.name,
+          jukirId: transaction.jukirId,
+        },
+      });
+    }
+
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    const externalId = `${transaction.transactionCode}-${Date.now()}`;
+    const assignedJukirId = transaction.jukirId ?? (req.user?.role === "JUKIR" ? req.user.id : null);
+
+    let providerPaymentId = "";
+    let qrString = "";
+    let qrCodeUrl = "";
+    let provider = "MOCK";
+    let rawPayload: unknown = null;
+
+    if (isXenditEnabled()) {
+      let live;
+      try {
+        live = await createXenditQrisPayment({
+          externalId,
+          amount: transaction.amount,
+          expiresAt,
+          metadata: {
+            transactionId: transaction.id,
+            transactionCode: transaction.transactionCode,
+            areaId: transaction.areaId,
+            areaName: transaction.area.name,
+            jukirId: assignedJukirId,
+            settlementTarget: "ADMIN",
+          },
+        });
+      } catch (err: any) {
+        return res.status(502).json({
+          success: false,
+          message: err?.message || "Gagal membuat QRIS ke payment gateway",
+          code: "GATEWAY_ERROR",
+        });
+      }
+
+      provider = "XENDIT";
+      providerPaymentId = live.providerPaymentId;
+      qrString = live.qrString;
+      qrCodeUrl = live.qrCodeUrl;
+      rawPayload = live.rawPayload;
+    } else {
+      const merchantId = "SMARTPARKING001";
+      qrString = `QRIS|${merchantId}|${transaction.transactionCode}|${transaction.amount}`;
+      qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrString)}`;
+      rawPayload = { mode: "MOCK", reason: "XENDIT_SECRET_KEY not configured" };
+    }
+
+    const createdPayment = await prisma.qrisPayment.create({
+      data: {
+        transactionId: transaction.id,
+        externalId,
+        provider,
+        providerPaymentId: providerPaymentId || null,
+        amount: transaction.amount,
+        areaId: transaction.areaId,
+        jukirId: assignedJukirId,
+        status: "PENDING",
+        qrString,
+        qrCodeUrl,
+        expiresAt,
+        rawPayload: rawPayload as any,
+      },
+    });
+
+    // Pastikan transaksi memiliki jukir pengelola agar masuk setoran per-jukir.
+    if (!transaction.jukirId && assignedJukirId) {
+      await prisma.transaction.update({ where: { id: transaction.id }, data: { jukirId: assignedJukirId } });
+    }
     
-    // ponytail: QR mock — payload QRIS-style + gambar via api.qrserver.com.
-    // Belum terhubung payment gateway asli; upgrade ke Midtrans/Xendit saat butuh bayar nyata.
-    const merchantId = "SMARTPARKING001";
-    const qrString = `QRIS|${merchantId}|${transaction.transactionCode}|${transaction.amount}`;
     const qrData = {
-      transactionId,
+      transactionId: transaction.id,
       transactionCode: transaction.transactionCode,
       amount: transaction.amount,
-      merchantId,
+      merchantId: "ADMIN-MERCHANT-QRIS",
       qrString,
-      qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrString)}`,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 menit
+      qrCodeUrl,
+      expiresAt,
+      paymentProvider: provider,
+      paymentExternalId: createdPayment.externalId,
+      gatewayMode: provider === "XENDIT" ? "LIVE" : "MOCK",
+      settlementTarget: "ADMIN",
+      areaId: transaction.areaId,
+      areaName: transaction.area.name,
+      jukirId: assignedJukirId,
     };
     
     res.json({
@@ -618,29 +762,86 @@ jukirRouter.post("/qris/generate", requireJukirOrAdmin, async (req, res, next) =
 // GET /api/jukir/qris/status/:transactionId - Cek status pembayaran
 jukirRouter.get("/qris/status/:transactionId", requireJukirOrAdmin, async (req, res, next) => {
   try {
-    const tx = await prisma.transaction.findUnique({
-      where: { id: req.params.transactionId },
-      select: {
-        id: true,
-        transactionCode: true,
-        status: true,
-        paymentMethod: true,
-        paidAt: true,
-        amount: true,
-        updatedAt: true,
-      },
-    });
+    const rawTransactionId = (req.params.transactionId ?? "").trim();
+    if (!rawTransactionId) {
+      return res.status(400).json({
+        success: false,
+        message: "ID transaksi wajib diisi",
+        code: "TRANSACTION_ID_REQUIRED",
+      });
+    }
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawTransactionId);
+
+    const tx = isUuid
+      ? await prisma.transaction.findUnique({
+          where: { id: rawTransactionId },
+          select: {
+            id: true,
+            areaId: true,
+            jukirId: true,
+            transactionCode: true,
+            status: true,
+            paymentMethod: true,
+            paidAt: true,
+            amount: true,
+            updatedAt: true,
+          },
+        })
+      : await prisma.transaction.findUnique({
+          where: { transactionCode: rawTransactionId },
+          select: {
+            id: true,
+            areaId: true,
+            jukirId: true,
+            transactionCode: true,
+            status: true,
+            paymentMethod: true,
+            paidAt: true,
+            amount: true,
+            updatedAt: true,
+          },
+        });
     
     if (!tx) {
       return res.status(404).json({ success: false, message: "Transaksi tidak ditemukan", code: "NOT_FOUND" });
     }
+
+    if (req.user?.role === "JUKIR" && tx.areaId !== req.user.areaId) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only check QRIS status in your assigned area",
+        code: "FORBIDDEN_AREA",
+      });
+    }
+
+    const latestQrisPayment = await prisma.qrisPayment.findFirst({
+      where: { transactionId: tx.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        status: true,
+        provider: true,
+        externalId: true,
+        expiresAt: true,
+        paidAt: true,
+      },
+    });
+
+    const isPaid =
+      (tx.status === "COMPLETED" && tx.paidAt !== null) ||
+      latestQrisPayment?.status === "PAID";
     
     res.json({
       success: true,
       data: {
         ...tx,
-        isPaid: tx.status === "COMPLETED" && tx.paidAt !== null,
+        isPaid,
         paymentTime: tx.paidAt ? new Date(tx.paidAt) : null,
+        paymentStatus: latestQrisPayment?.status ?? (isPaid ? "PAID" : "PENDING"),
+        paymentProvider: latestQrisPayment?.provider ?? null,
+        paymentExternalId: latestQrisPayment?.externalId ?? null,
+        paymentExpiresAt: latestQrisPayment?.expiresAt ?? null,
+        settlementTarget: latestQrisPayment ? "ADMIN" : null,
       },
     });
   } catch (e) {

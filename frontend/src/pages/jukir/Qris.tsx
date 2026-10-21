@@ -36,24 +36,34 @@ export function JukirQris() {
   const [qrData, setQrData] = useState<QrData | null>(null);
   const [checkStatusTxId, setCheckStatusTxId] = useState<string>("");
   const [qrisStatus, setQrisStatus] = useState<QrisStatus | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 
   useEffect(() => {
     fetchEligibleTransactions();
   }, []);
 
-  const fetchEligibleTransactions = async () => {
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      fetchEligibleTransactions(true);
+    }, 20000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const fetchEligibleTransactions = async (silent = false) => {
     try {
-      setLoadingTransactions(true);
+      if (!silent) setLoadingTransactions(true);
       const response = await apiClient.get("/transactions");
 
       if (response.data.success) {
         setTransactions(response.data.data);
+        setLastSyncAt(new Date());
       }
     } catch (error) {
       console.error("Failed to fetch transactions for QRIS:", error);
-      alert("Gagal memuat daftar transaksi");
+      if (!silent) alert("Gagal memuat daftar transaksi");
     } finally {
-      setLoadingTransactions(false);
+      if (!silent) setLoadingTransactions(false);
     }
   };
 
@@ -94,14 +104,16 @@ export function JukirQris() {
   };
 
   const checkPaymentStatus = async () => {
-    if (!checkStatusTxId) {
-      alert("Masukkan ID transaksi");
+    const queryId = checkStatusTxId.trim();
+
+    if (!queryId) {
+      alert("Masukkan kode transaksi (contoh: PARK-38114)");
       return;
     }
 
     setLoadingStatus(true);
     try {
-      const response = await apiClient.get(`/jukir/qris/status/${checkStatusTxId}`);
+      const response = await apiClient.get(`/jukir/qris/status/${encodeURIComponent(queryId)}`);
       if (response.data.success) {
         setQrisStatus(response.data.data);
       } else {
@@ -155,8 +167,17 @@ export function JukirQris() {
             </select>
 
             {!loadingTransactions && eligibleTransactions.length === 0 && (
-              <p className="text-muted mt-3">Belum ada transaksi yang siap di-generate QRIS (checkout dulu).</p>
+              <p className="text-muted mt-3">Belum ada transaksi eligible. Pastikan transaksi sudah checkout (keluar terisi & jumlah sudah muncul), lalu refresh.</p>
             )}
+
+            <div className="mt-3" style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "space-between" }}>
+              <button type="button" className="btn btn-outline" onClick={() => fetchEligibleTransactions()} disabled={loadingTransactions}>
+                {loadingTransactions ? "Memuat..." : "Refresh Transaksi"}
+              </button>
+              <small className="text-muted">
+                Sinkron terakhir: {lastSyncAt ? lastSyncAt.toLocaleTimeString("id-ID") : "-"}
+              </small>
+            </div>
 
             {selectedTransaction && (
               <p className="text-muted mt-3">
@@ -218,12 +239,12 @@ export function JukirQris() {
           </h2>
 
           <div className="form-section">
-            <label htmlFor="qris-check-id">ID Transaksi</label>
+            <label htmlFor="qris-check-id">Kode Transaksi (PARK-xxxxx)</label>
             <input
               id="qris-check-id"
               type="text"
               className="input"
-              placeholder="Masukkan ID transaksi"
+              placeholder="Contoh: PARK-38114 atau UUID"
               value={checkStatusTxId}
               onChange={(e) => setCheckStatusTxId(e.target.value)}
             />

@@ -4,6 +4,7 @@ import { prisma } from "../prisma.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { calculateParkingFee } from "../lib/fee.js";
 import { getActiveMou, mouToParkingRules } from "../lib/business.js";
+import { isXenditEnabled } from "../services/xendit.js";
 
 export const transactionsRouter = Router();
 
@@ -89,6 +90,11 @@ transactionsRouter.post("/", requireAuth, async (req, res, next) => {
         ? req.user.areaId
         : areaId;
 
+    const effectiveJukirId =
+      req.user?.role === "JUKIR"
+        ? req.user.id
+        : (jukirId ?? null);
+
     if (!effectiveAreaId) {
       return res.status(400).json({
         success: false,
@@ -113,7 +119,7 @@ transactionsRouter.post("/", requireAuth, async (req, res, next) => {
     
     const tx = await createTransactionWithRetry({
       areaId: effectiveAreaId,
-      jukirId: jukirId ?? null,
+      jukirId: effectiveJukirId,
       vehicleType,
       plateNumber: plateNumber ? plateNumber.toUpperCase() : null,
     });
@@ -241,7 +247,12 @@ transactionsRouter.post("/:id/checkout", requireAuth, async (req, res, next) => 
     const fee = calculateParkingFee(tx.checkIn, checkOut, rules);
     const updated = await prisma.transaction.update({
       where: { id: tx.id },
-      data: { checkOut, durationMinutes: fee.durationMinutes, amount: fee.totalFee },
+      data: {
+        checkOut,
+        durationMinutes: fee.durationMinutes,
+        amount: fee.totalFee,
+        ...(req.user?.role === "JUKIR" && !tx.jukirId ? { jukirId: req.user.id } : {}),
+      },
     });
     res.json({ success: true, data: updated });
   } catch (e) {
@@ -264,6 +275,22 @@ transactionsRouter.post("/:id/pay", requireAuth, async (req, res, next) => {
     if (tx.amount == null) {
       return res.status(400).json({ success: false, message: "Checkout dulu sebelum bayar", code: "NO_AMOUNT" });
     }
+
+    if (paymentMethod === "QRIS" && isXenditEnabled()) {
+      const latestQrisPayment = await prisma.qrisPayment.findFirst({
+        where: { transactionId: tx.id },
+        orderBy: { createdAt: "desc" },
+        select: { status: true },
+      });
+
+      if (!latestQrisPayment || latestQrisPayment.status !== "PAID") {
+        return res.status(400).json({
+          success: false,
+          message: "Pembayaran QRIS belum diterima gateway. Tunggu webhook/payment status PAID.",
+          code: "QRIS_NOT_PAID",
+        });
+      }
+    }
     
     // Users can only pay their own transactions
     if (req.user?.role === "USER" && (!tx.userId || tx.userId !== req.user.id)) {
@@ -285,7 +312,12 @@ transactionsRouter.post("/:id/pay", requireAuth, async (req, res, next) => {
     
     const updated = await prisma.transaction.update({
       where: { id: tx.id },
-      data: { paymentMethod, paidAt: new Date(), status: "COMPLETED" },
+      data: {
+        paymentMethod,
+        paidAt: new Date(),
+        status: "COMPLETED",
+        ...(req.user?.role === "JUKIR" && !tx.jukirId ? { jukirId: req.user.id } : {}),
+      },
     });
     res.json({ success: true, data: updated });
   } catch (e) {

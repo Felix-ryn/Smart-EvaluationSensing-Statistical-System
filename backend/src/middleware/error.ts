@@ -33,6 +33,14 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     });
   }
 
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2023") {
+    return res.status(400).json({
+      success: false,
+      message: "Format ID transaksi tidak valid",
+      code: "INVALID_TRANSACTION_ID",
+    });
+  }
+
   console.error(err);
   res.status(500).json({ success: false, message: "Server error", code: "SERVER_ERROR" });
 }
