@@ -6,6 +6,20 @@ import { createXenditQrisPayment, isXenditEnabled } from "../services/xendit.js"
 
 export const jukirRouter = Router();
 
+// GET /api/jukir/list - Daftar jukir untuk dropdown (Admin only)
+jukirRouter.get("/list", requireAdmin, async (_req, res, next) => {
+  try {
+    const jukirs = await prisma.user.findMany({
+      where: { role: "JUKIR" },
+      select: { id: true, name: true, areaId: true },
+      orderBy: { name: "asc" },
+    });
+    res.json({ success: true, data: jukirs });
+  } catch (e) {
+    next(e);
+  }
+});
+
 function toDayRange(rawDate?: string) {
   const targetDate = rawDate ? new Date(rawDate) : new Date();
   const startDate = new Date(targetDate);

@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
+  Banknote,
   CreditCard,
   FileText,
   LayoutDashboard,
@@ -33,6 +34,7 @@ const menuConfig = {
     { to: "/admin/kapasitas", label: "Kapasitas", icon: TrendingUp },
     { to: "/admin/reports", label: "Laporan", icon: FileText },
     { to: "/admin/pajak-setoran", label: "Pajak & Setoran", icon: Coins },
+    { to: "/admin/pendapatan", label: "Pendapatan Cash & QRIS", icon: Banknote },
     { to: "/admin/reconciliation", label: "Rekonsiliasi", icon: Scale },
     { to: "/admin/users", label: "Users & Jukir", icon: Users2 },
     { to: "/admin/settings", label: "Pengaturan", icon: Settings },
@@ -42,6 +44,7 @@ const menuConfig = {
     { to: "/jukir/transactions", label: "Transaksi Parkir", icon: CreditCard },
     { to: "/jukir/violations", label: "Pelanggaran", icon: AlertTriangle },
     { to: "/jukir/setoran", label: "Setoran", icon: Coins },
+    { to: "/jukir/pendapatan", label: "Pendapatan Cash & QRIS", icon: Banknote },
     { to: "/jukir/qris", label: "QRIS", icon: QrCode },
     { to: "/jukir/traffic", label: "Traffic Area", icon: Activity },
   ],

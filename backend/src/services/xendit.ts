@@ -77,7 +77,15 @@ export async function createXenditQrisPayment(input: CreateQrisPaymentInput): Pr
   }
 
   const payload = response.data ?? {};
-  const qrString = String(payload.qr_string ?? payload.qrString ?? "");
+  console.log("[xendit:qr] raw response:", JSON.stringify(payload));
+  const qrString = String(
+    payload.qr_string ??
+      payload.qr_code ??
+      payload.data?.qr_string ??
+      payload.data?.qr_code ??
+      payload.qr_code_url ??
+      "",
+  );
   if (!qrString) {
     throw new Error("Xendit tidak mengembalikan qr_string");
   }

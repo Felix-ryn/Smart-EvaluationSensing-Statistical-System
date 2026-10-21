@@ -27,6 +27,7 @@ import { JukirTraffic } from "./pages/jukir/Traffic";
 import { AdminLiveTraffic } from "./pages/admin/LiveTraffic";
 import { AdminPajakSetoran } from "./pages/admin/PajakSetoran";
 import { Settings } from "./pages/admin/Settings";
+import { CashQris } from "./pages/CashQris";
 
 // Require authentication wrapper
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="kapasitas" element={<Placeholder title="Kapasitas" phase="selanjutnya" />} />
           <Route path="reports" element={<Reports />} />
           <Route path="pajak-setoran" element={<AdminPajakSetoran />} />
+          <Route path="pendapatan" element={<CashQris />} />
           <Route path="reconciliation" element={<Reconciliation />} />
           <Route path="users" element={<Users />} />
           <Route path="settings" element={<Settings />} />
@@ -92,6 +94,7 @@ export default function App() {
           <Route path="payment" element={<JukirPayment />} />
           <Route path="violations" element={<JukirViolations />} />
           <Route path="setoran" element={<JukirSetoran />} />
+          <Route path="pendapatan" element={<CashQris />} />
           <Route path="qris" element={<JukirQris />} />
           <Route path="traffic" element={<JukirTraffic />} />
         </Route>
