@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CarFront, CreditCard, ListFilter, Plus, Printer, Search, X } from "lucide-react";
+import { CarFront, CreditCard, ListFilter, Plus, Printer, Search, X, Camera } from "lucide-react";
 import { apiClient } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { PlateDetectionModal } from "../../components/PlateDetectionModal";
 
 interface Transaction {
   id: string;
@@ -46,6 +47,8 @@ export function JukirTransactions() {
   const [plateNumber, setPlateNumber] = useState("");
   const [creating, setCreating] = useState(false);
   const [ticketData, setTicketData] = useState<TicketData | null>(null);
+  const [showPlateDetection, setShowPlateDetection] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     fetchTransactions();
@@ -90,6 +93,12 @@ export function JukirTransactions() {
 
   const closeCreateModal = () => {
     if (creating) return;
+    // Stop webcam if it's running
+    if (videoRef.current?.srcObject) {
+      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+      tracks.forEach((track) => track.stop());
+    }
+    setShowPlateDetection(false);
     setShowModal(false);
     setPlateNumber("");
     setVehicleType("motorcycle");
@@ -124,6 +133,17 @@ export function JukirTransactions() {
 
   const handlePrintTicket = () => {
     window.print();
+  };
+
+  const handlePlateDetected = (detectedPlate: string, confidence: number) => {
+    setPlateNumber(detectedPlate);
+    setShowPlateDetection(false);
+    // Optional: Show info about confidence
+    if (confidence >= 0.85) {
+      console.log(`Plat terdeteksi dengan confidence tinggi: ${(confidence * 100).toFixed(1)}%`);
+    } else {
+      console.log(`Plat terdeteksi dengan confidence rendah: ${(confidence * 100).toFixed(1)}%, silakan verifikasi`);
+    }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -393,17 +413,27 @@ export function JukirTransactions() {
 
               <div className="form-group">
                 <label htmlFor="plateNumber">Plat Nomor</label>
-                <input
-                  id="plateNumber"
-                  type="text"
-                  className="input"
-                  value={plateNumber}
-                  onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                  placeholder="Contoh: B 1234 XYZ"
-                  maxLength={15}
-                  required
-                  autoComplete="off"
-                />
+                <div className="input-with-action">
+                  <input
+                    id="plateNumber"
+                    type="text"
+                    className="input"
+                    value={plateNumber}
+                    onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
+                    placeholder="Contoh: B 1234 XYZ"
+                    maxLength={15}
+                    required
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowPlateDetection(true)}
+                    title="Deteksi plat dengan kamera"
+                  >
+                    <Camera size={16} strokeWidth={2} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
 
               <div className="actions">
@@ -465,9 +495,34 @@ export function JukirTransactions() {
                 Tutup
               </button>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+           </div>
+         </div>
+       )}
+
+       {showModal && showPlateDetection && (
+         <PlateDetectionModal
+           vehicleType={vehicleType}
+           onPlateDetected={handlePlateDetected}
+           onClose={() => setShowPlateDetection(false)}
+           aiServiceUrl={import.meta.env.VITE_AI_SERVICE_URL || "http://localhost:8000"}
+         />
+       )}
+
+       <style>{`
+         .input-with-action {
+           display: flex;
+           gap: 8px;
+           align-items: center;
+         }
+
+         .input-with-action .input {
+           flex: 1;
+         }
+
+         .input-with-action .btn {
+           flex-shrink: 0;
+         }
+       `}</style>
+     </div>
+   );
 }

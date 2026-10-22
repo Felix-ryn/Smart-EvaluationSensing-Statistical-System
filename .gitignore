@@ -17,6 +17,8 @@ backend/prisma/migrations/dev.db*
 dataset/
 dataset_merged/
 *.zip
+sess_backup.dump
+sess-tables.list
 
 # python / notebooks
 __pycache__/
