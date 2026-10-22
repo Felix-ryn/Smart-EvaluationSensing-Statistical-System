@@ -40,3 +40,8 @@ dataset_merged_old/
 runs/
 
 dataset_merged_backup/
+
+backend/uploads/*.jpg
+backend/uploads/*.jpeg
+backend/uploads/*.png
+frontend/.vite/
