@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ParkingSquare, ShieldCheck } from "lucide-react";
+import { ParkingSquare, ShieldCheck, ArrowLeft } from "lucide-react";
 import { useAuth, type User } from "../contexts/AuthContext";
 
 const HOME_BY_ROLE: Record<User["role"], string> = {
@@ -51,7 +51,7 @@ export function Login() {
         <h1>Selamat Datang!</h1>
         <p className="auth-tagline">Parkir Aman, Hidup Lebih Mudah</p>
 
-        <div className="auth-tabs" role="tablist" aria-label="Pilih jenis akun">
+        <div className="auth-tabs" role="tablist" aria-label="Pilih jenis akun" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%" }}>
           {TABS.map((t) => {
             const Icon = t.icon;
             return (
@@ -62,6 +62,7 @@ export function Login() {
                 aria-selected={tab === t.role}
                 className={`auth-tab ${tab === t.role ? "active" : ""}`}
                 onClick={() => pickTab(t)}
+                style={{ width: "100%" }}
               >
                 <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
                 {t.label}
@@ -106,6 +107,39 @@ export function Login() {
             {loading ? "Memproses..." : "Masuk"}
           </button>
         </form>
+        <button
+          type="button"
+          onClick={() => nav("/")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            width: "100%",
+            padding: "10px 16px",
+            marginTop: 8,
+            backgroundColor: "#f3f4f6",
+            border: "1px solid #d1d5db",
+            borderRadius: 6,
+            cursor: "pointer",
+            fontSize: 14,
+            fontWeight: 500,
+            color: "#4b5563",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "#e5e7eb";
+            e.currentTarget.style.borderColor = "#9ca3af";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "#f3f4f6";
+            e.currentTarget.style.borderColor = "#d1d5db";
+          }}
+          title="Kembali ke halaman utama"
+        >
+          <ArrowLeft size={16} strokeWidth={2} />
+          Kembali ke Halaman Utama
+        </button>
       </div>
     </div>
   );

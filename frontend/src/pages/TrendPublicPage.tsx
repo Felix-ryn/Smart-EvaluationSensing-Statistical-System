@@ -41,6 +41,17 @@ interface TrendData {
   daily: DailyPoint[];
 }
 
+interface Violation {
+  id: string;
+  photoPath: string;
+  violationType: string;
+  confidence: number | null;
+  source: "USER" | "JUKIR" | "CCTV";
+  status: "PENDING" | "VALID" | "REJECTED";
+  createdAt: string;
+  area?: { name: string } | null;
+}
+
 const RANGE_OPTIONS = [7, 30, 90];
 
 const BUSY_HIGH = 0.66;
@@ -81,6 +92,8 @@ export function TrendPublicPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(30);
+  const [violations, setViolations] = useState<Violation[]>([]);
+  const [loadingViolations, setLoadingViolations] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -103,6 +116,22 @@ export function TrendPublicPage() {
       alive = false;
     };
   }, [range]);
+
+  useEffect(() => {
+    setLoadingViolations(true);
+    api
+      .get("/violations")
+      .then(({ data }) => {
+        const ilegalOnly = (data.data ?? []).filter(
+          (v: Violation) => v.violationType === "parking_violation"
+        ).sort((a: Violation, b: Violation) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setViolations(ilegalOnly);
+      })
+      .catch((err) => console.error("Load violations error:", err))
+      .finally(() => setLoadingViolations(false));
+  }, []);
 
   const maxHour = useMemo(
     () => (data ? Math.max(...data.hourly.map((h) => h.count), 0) : 0),
@@ -370,6 +399,59 @@ export function TrendPublicPage() {
             <p className="text-muted" style={{ marginTop: 10 }}>
               Jam lengang dihitung pada rentang 06:00–22:00 agar sarannya tetap masuk akal.
             </p>
+          </div>
+
+          {/* Violations Table - Read-only untuk Public */}
+          <div className="card">
+            <h2>Pelanggaran Parkir Terakhir</h2>
+            <p className="text-muted">Informasi pelanggaran yang terdeteksi di area parkir.</p>
+            
+            {loadingViolations ? (
+              <div className="loading">Memuat pelanggaran...</div>
+            ) : violations.length === 0 ? (
+              <div style={{ padding: "16px 0", textAlign: "center", color: "#6b7280" }}>
+                Belum ada pelanggaran terdeteksi.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Foto</th>
+                      <th>Area</th>
+                      <th>Sumber</th>
+                      <th>Status</th>
+                      <th>Waktu</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {violations.map((v) => (
+                      <tr key={v.id}>
+                        <td>
+                          <a href={v.photoPath} target="_blank" rel="noreferrer">
+                            <img src={v.photoPath} alt="violation" style={{ width: 60, height: 45, borderRadius: 4, objectFit: "cover" }} />
+                          </a>
+                        </td>
+                        <td>{v.area?.name ?? "—"}</td>
+                        <td><span className="badge badge-secondary">{v.source}</span></td>
+                        <td>
+                          <span className={`badge ${
+                            v.status === "PENDING" ? "badge-warning" : 
+                            v.status === "VALID" ? "badge-danger" : 
+                            "badge-success"
+                          }`}>
+                            {v.status}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: "12px", color: "#6b7280" }}>
+                          {new Date(v.createdAt).toLocaleString("id-ID")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}

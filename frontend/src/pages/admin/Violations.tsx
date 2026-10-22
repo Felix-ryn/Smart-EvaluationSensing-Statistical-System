@@ -68,13 +68,17 @@ export function Violations() {
 
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return items.filter((v) => {
-      const byStatus = statusFilter === "ALL" || v.status === statusFilter;
-      const bySource = sourceFilter === "ALL" || v.source === sourceFilter;
-      const blob = `${v.area?.name ?? ""} ${v.reportedBy?.name ?? ""} ${v.reporterRole}`.toLowerCase();
-      const bySearch = q.length === 0 || blob.includes(q);
-      return byStatus && bySource && bySearch;
-    });
+    return items
+      .filter((v) => {
+        // Only ILLEGAL violations
+        const byType = v.violationType === "parking_violation";
+        const byStatus = statusFilter === "ALL" || v.status === statusFilter;
+        const bySource = sourceFilter === "ALL" || v.source === sourceFilter;
+        const blob = `${v.area?.name ?? ""} ${v.reportedBy?.name ?? ""} ${v.reporterRole}`.toLowerCase();
+        const bySearch = q.length === 0 || blob.includes(q);
+        return byType && byStatus && bySource && bySearch;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [items, search, sourceFilter, statusFilter]);
 
   return (

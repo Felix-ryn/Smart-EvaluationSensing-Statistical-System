@@ -25,9 +25,10 @@ interface CameraProps {
   onViolationDetected?: (violation: Alert) => void;
   defaultSource?: "USER" | "JUKIR";
   showViolationsTable?: boolean; // Hanya tampil di Jukir
+  hideDetectionResultCard?: boolean; // Hide untuk Jukir (hasil langsung ke tabel)
 }
 
-export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER", showViolationsTable = false }: CameraProps) {
+export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER", showViolationsTable = false, hideDetectionResultCard = false }: CameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -37,11 +38,9 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
   const [areas, setAreas] = useState<Area[]>([]);
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [areaNote, setAreaNote] = useState("");
-  const threshold = 0.3; // Fixed: 30%
-  const cooldown = 5; // Fixed: 5 seconds
-  const [lastAlertTime, setLastAlertTime] = useState(0);
-  const [frameHistory, setFrameHistory] = useState<DetectionFrame[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const threshold = 0.7; // Fixed: 70% (parking_violation threshold)
+  const cooldown = 5000; // Fixed: 5 seconds in ms
+  const [lastSaveTime, setLastSaveTime] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [supportsVibration] = useState(() => "vibrate" in navigator);
@@ -59,7 +58,10 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
 
   function loadViolations() {
     api.get("/violations/mine").then(({ data }) => {
-      setViolations(data.data || []);
+      const ilegalOnly = (data.data || [])
+        .filter((v: any) => v.violationType === "parking_violation")
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setViolations(ilegalOnly);
     }).catch(err => console.error("Load violations error:", err));
   }
 
@@ -99,7 +101,6 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-    setFrameHistory([]);
     setLastDetectionResult(null);
   }
 
@@ -109,9 +110,12 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
       if (!videoRef.current || !canvasRef.current) return;
 
       try {
-        // Capture frame every 5 intervals (~2.5 FPS effective for detection)
         frameCount++;
-        if (frameCount % 3 !== 0) return; // Sample every 3rd frame
+        if (frameCount % 3 !== 0) return; // Sample every 3rd frame (~2.5 FPS)
+
+        const now = Date.now();
+        // Only process if cooldown elapsed
+        if (now - lastSaveTime < cooldown) return;
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d");
@@ -136,19 +140,35 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
               const { data } = await api.post("/violations", form);
               const violation = data.data?.violation;
 
-              if (violation?.confidence != null) {
-                const isViolation = violation.confidence >= threshold;
+              // Save only if parking_violation detected with confidence >= 70%
+              if (violation?.violationType === "parking_violation" && violation?.confidence >= threshold) {
+                setLastSaveTime(Date.now());
+                
+                // Trigger sound + vibration
+                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                osc.frequency.value = 800;
+                osc.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.2);
+                if (supportsVibration) navigator.vibrate?.(200);
 
-                // Only display FIRST detection result for user review
-                // (don't auto-trigger alert like before)
-                if (!lastDetectionResult) {
+                // Show snapshot in preview
+                if (canvasRef.current) {
+                  const snapshot = canvasRef.current.toDataURL("image/jpeg");
+                  const area = areas.find((a) => a.id === selectedAreaId);
                   setLastDetectionResult({
                     violationType: violation.violationType,
                     confidence: violation.confidence,
                     summary: data.data?.summary,
                     decision: data.data?.decision,
+                    snapshot,
+                    areaName: area?.name || "Unknown",
                   });
                 }
+                
+                // Reload violations table if Jukir
+                if (showViolationsTable) loadViolations();
               }
             } catch (err) {
               console.error("Detection error:", err);
@@ -165,40 +185,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
     }, 500);
   }
 
-  function triggerAlert(frame: DetectionFrame) {
-    const now = Date.now();
-    setLastAlertTime(now);
 
-    // Sound
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    osc.frequency.value = 800;
-    osc.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.2);
-
-    // Vibration
-    if (supportsVibration) {
-      navigator.vibrate?.(200);
-    }
-
-    // Snapshot
-    if (canvasRef.current) {
-      const snapshot = canvasRef.current.toDataURL("image/jpeg");
-      const area = areas.find((a) => a.id === selectedAreaId);
-
-      const alert: Alert = {
-        id: Math.random().toString(36).slice(2),
-        timestamp: now,
-        area: area?.name || "Unknown",
-        confidence: frame.confidence,
-        snapshot,
-      };
-
-      setAlerts((prev) => [alert, ...prev].slice(0, 5));
-      onViolationDetected?.(alert);
-    }
-  }
 
   return (
     <div className="live-camera-container">
@@ -239,8 +226,8 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
             <span>{(threshold * 100).toFixed(0)}%</span>
           </div>
           <div className="setting-item">
-            <strong>Cooldown Alert:</strong>
-            <span>{cooldown}s</span>
+            <strong>Cooldown Simpan:</strong>
+            <span>{cooldown / 1000}s</span>
           </div>
         </div>
       </div>
@@ -300,8 +287,6 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
         <button
           className="btn btn-outline"
           onClick={() => {
-            setFrameHistory([]);
-            setAlerts([]);
             setError("");
             setLastDetectionResult(null);
           }}
@@ -313,60 +298,35 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
 
       {error && <div className="alert alert-danger">{error}</div>}
 
-      {/* Frame history visualization */}
-      {frameHistory.length > 0 && (
-        <div className="frame-history">
-          <h4>Status Frame Terakhir ({frameHistory.length}/5)</h4>
-          <div className="frame-history-grid">
-            {frameHistory.map((f, i) => (
-              <div key={i} className={`frame-item ${f.isViolation ? "violation" : "normal"}`}>
-                <div className="frame-badge">{i + 1}</div>
-                <div className="frame-conf">{(f.confidence * 100).toFixed(0)}%</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Detection Result Card with Action Button */}
-      {lastDetectionResult && (
+
+      {/* Detection Result Card - auto-saved (hide if hideDetectionResultCard true) */}
+      {lastDetectionResult && !hideDetectionResultCard && (
         <div className="detection-result-card card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h4 style={{ margin: 0 }}>Hasil Deteksi Terakhir</h4>
-            <span className="badge badge-warning">PERLU REVIEW ADMIN/JUKIR</span>
+            <h4 style={{ margin: 0 }}>Pelanggaran Terdeteksi & Tersimpan</h4>
+            <span className="badge badge-danger">ILLEGAL</span>
           </div>
+
+          {lastDetectionResult.snapshot && (
+            <img
+              src={lastDetectionResult.snapshot}
+              alt="snapshot"
+              style={{ width: "100%", borderRadius: 8, marginBottom: 16, maxHeight: 300, objectFit: "cover" }}
+            />
+          )}
 
           <table className="result-table" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16 }}>
             <tbody>
               <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
-                <td style={{ padding: "8px", fontWeight: 600, width: "30%", color: "#6b7280" }}>Jenis</td>
-                <td style={{ padding: "8px" }}>
-                  {lastDetectionResult.decision === "parking_violation" ? (
-                    <span className="badge badge-danger">ILLEGAL</span>
-                  ) : lastDetectionResult.decision === "review" ? (
-                    <span className="badge badge-warning">REVIEW</span>
-                  ) : (
-                    <span className="badge badge-success">CLEAR</span>
-                  )}
-                </td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
-                <td style={{ padding: "8px", fontWeight: 600, color: "#6b7280" }}>Area</td>
-                <td style={{ padding: "8px" }}>{areas.find(a => a.id === selectedAreaId)?.name || "—"}</td>
+                <td style={{ padding: "8px", fontWeight: 600, width: "30%", color: "#6b7280" }}>Area</td>
+                <td style={{ padding: "8px" }}>{lastDetectionResult.areaName || "—"}</td>
               </tr>
               <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
                 <td style={{ padding: "8px", fontWeight: 600, color: "#6b7280" }}>Sumber</td>
                 <td style={{ padding: "8px" }}>
                   <span className="badge badge-secondary">{defaultSource}</span>
                 </td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
-                <td style={{ padding: "8px", fontWeight: 600, color: "#6b7280" }}>Parkir Normal</td>
-                <td style={{ padding: "8px" }}>{lastDetectionResult.summary?.normal ?? 0}</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
-                <td style={{ padding: "8px", fontWeight: 600, color: "#6b7280" }}>Pelanggaran</td>
-                <td style={{ padding: "8px" }}>{lastDetectionResult.summary?.violation ?? 0}</td>
               </tr>
               <tr>
                 <td style={{ padding: "8px", fontWeight: 600, color: "#6b7280" }}>Confidence</td>
@@ -377,9 +337,9 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
             </tbody>
           </table>
 
-          <button className="btn btn-primary" style={{ width: "100%" }}>
-            Kirim & Analisis
-          </button>
+          <div style={{ fontSize: 13, color: "#6b7280", padding: "8px 0" }}>
+            ✓ Laporan tersimpan otomatis. Cooldown {cooldown / 1000}s sebelum deteksi berikutnya.
+          </div>
         </div>
       )}
 

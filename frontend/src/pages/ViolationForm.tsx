@@ -176,28 +176,33 @@ export function ViolationForm({
           {error && <div style={{ color: "crimson" }}>{error}</div>}
           {result && (
             <div className="card">
-              <strong>
-                {result.violationDetected ? (
-                  <span className="badge badge-danger">Pelanggaran terdeteksi</span>
-                ) : result.needsReview ? (
-                  <span className="badge badge-warning">Perlu review admin/jukir</span>
-                ) : (
-                  <span className="badge badge-success">Tidak ada pelanggaran</span>
-                )}
-              </strong>
-              <p style={{ margin: "8px 0 0" }}>
-                Parkir normal: {result.summary.normal} · pelanggaran: {result.summary.violation}
-              </p>
-              {result.violation.confidence != null && (
-                <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>
-                  Keyakinan: {(result.violation.confidence * 100).toFixed(1)}%
-                </p>
+              {result.violationDetected ? (
+                <>
+                  <strong>
+                    <span className="badge badge-danger">Pelanggaran Terdeteksi & Tersimpan</span>
+                  </strong>
+                  <p style={{ margin: "8px 0 0" }}>
+                    Parkir normal: {result.summary.normal} · pelanggaran: {result.summary.violation}
+                  </p>
+                  {result.violation.confidence != null && (
+                    <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>
+                      Keyakinan: {(result.violation.confidence * 100).toFixed(1)}%
+                    </p>
+                  )}
+                  <img
+                    src={result.violation.photoPath}
+                    alt="laporan"
+                    style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
+                  />
+                </>
+              ) : (
+                <div style={{ padding: "16px 0" }}>
+                  <strong style={{ display: "block", marginBottom: 8 }}>Tidak Terdeteksi Pelanggaran</strong>
+                  <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: "14px" }}>
+                    Foto/video tidak menunjukkan pelanggaran parkir. Silakan coba unggah bukti lain jika diperlukan.
+                  </p>
+                </div>
               )}
-              <img
-                src={result.violation.photoPath}
-                alt="laporan"
-                style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
-              />
             </div>
           )}
         </form>
@@ -208,6 +213,8 @@ export function ViolationForm({
         <LiveCameraDetection
           onViolationDetected={onDone}
           defaultSource={defaultSource as "USER" | "JUKIR"}
+          showViolationsTable={false}
+          hideDetectionResultCard={defaultSource === "JUKIR"}
         />
       )}
     </div>

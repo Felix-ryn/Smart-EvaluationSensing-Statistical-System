@@ -6,7 +6,7 @@ import { upload, detectFile, type Detection } from "../lib/ai.js";
 
 export const violationsRouter = Router();
 
-const HIGH_CONF = Number(process.env.VIOLATION_HIGH_CONF ?? 0.6);
+const HIGH_CONF = Number(process.env.VIOLATION_HIGH_CONF ?? 0.7);
 const REVIEW_CONF = Number(process.env.VIOLATION_REVIEW_CONF ?? 0.35);
 
 // Pilih deteksi parking_violation dengan confidence tertinggi.
@@ -16,8 +16,8 @@ function pickViolation(dets: Detection[]): Detection | null {
   return violations.reduce((a, b) => (b.confidence > a.confidence ? b : a));
 }
 
-// POST /api/violations — user/jukir/admin upload foto/video; jalankan deteksi.
-violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res, next) => {
+// POST /api/violations — user/jukir/admin upload foto/video; jalankan deteksi. (auth optional untuk public)
+violationsRouter.post("/", upload.single("photo"), async (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: "Foto wajib diunggah", code: "NO_FILE" });
@@ -46,8 +46,8 @@ violationsRouter.post("/", requireAuth, upload.single("photo"), async (req, res,
         confidence: violationDet?.confidence ?? null,
         source,
         note,
-        reportedById: req.user!.id,
-        reporterRole: req.user!.role,
+        reportedById: req.user?.id ?? null,
+        reporterRole: req.user?.role ?? "USER",
         detections: result as object,
       },
     });

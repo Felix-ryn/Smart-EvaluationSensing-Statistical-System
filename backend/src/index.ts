@@ -41,7 +41,7 @@ app.use("/api/dashboard", dashboardRouter);
 app.use("/api/jukir", requireAuth, jukirRouter);
 app.use("/api/mou", mouRouter);
 app.use("/api/users", requireAuth, requireAdmin, usersRouter);
-app.use("/api/reports", requireAuth, requireAdmin, reportsRouter);
+app.use("/api/reports", requireAuth, reportsRouter);
 app.use("/api/violations", violationsRouter);
 app.use("/api/detections", detectionsRouter); // AI area scan (admin) — auth di dalam router
 app.use("/api/chat", chatbotRouter); // Chatbot untuk user
