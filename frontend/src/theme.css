@@ -1633,6 +1633,7 @@ textarea.input::placeholder {
 }
 
 .area-card {
+  background: linear-gradient(180deg, #19B79A 0%, #55CDB2 50%, #DDF5EF 100%);
   border: 1px solid var(--lms-border-light);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
@@ -1644,6 +1645,7 @@ textarea.input::placeholder {
 }
 
 .area-card.active {
+  background: linear-gradient(180deg, #009B83 0%, #19B79A 50%, #DDF5EF 100%);
   border-color: var(--lms-primary);
   box-shadow: 0 0 0 2px rgba(0, 155, 131, 0.12);
 }
@@ -1663,7 +1665,7 @@ textarea.input::placeholder {
 }
 
 .stat-item {
-  background: #f7fbfb;
+  background: rgba(255, 255, 255, 0.75);
   border: 1px solid var(--lms-border-light);
   border-radius: 8px;
   padding: 0.55rem;
