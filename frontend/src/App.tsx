@@ -27,6 +27,7 @@ import { JukirTraffic } from "./pages/jukir/Traffic";
 import { AdminLiveTraffic } from "./pages/admin/LiveTraffic";
 import { AdminPajakSetoran } from "./pages/admin/PajakSetoran";
 import { Settings } from "./pages/admin/Settings";
+import { LicensePlateCamera } from "./pages/admin/LicensePlateCamera";
 
 // Require authentication wrapper
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="jukir" element={<Placeholder title="Manage Jurik" phase="sudah ada di Users" />} />
           <Route path="mou" element={<Mou />} />
           <Route path="area-scan" element={<AreaScan />} />
+          <Route path="license-plate" element={<LicensePlateCamera />} />
         </Route>
 
         {/* Jukir Routes */}
