@@ -22,11 +22,16 @@ violationsRouter.post("/", upload.single("photo"), async (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({ success: false, message: "Foto wajib diunggah", code: "NO_FILE" });
     }
-    const areaId = typeof req.body.areaId === "string" && req.body.areaId ? req.body.areaId : null;
     const source = (["USER", "JUKIR", "CCTV"] as const).includes(req.body.source)
       ? (req.body.source as "USER" | "JUKIR" | "CCTV")
       : "USER";
     const note = typeof req.body.note === "string" && req.body.note.trim() ? req.body.note.trim() : null;
+
+    let areaId = typeof req.body.areaId === "string" && req.body.areaId ? req.body.areaId : null;
+    // Jukir hanya boleh melapor ke area kerjanya sendiri; abaikan areaId dari body.
+    if (req.user?.role === "JUKIR") {
+      areaId = req.user.areaId ?? null;
+    }
 
     const result = await detectFile(req.file.path, req.file.mimetype);
     const violationDet = pickViolation(result.detections);
