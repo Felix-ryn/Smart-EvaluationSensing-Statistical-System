@@ -7,3 +7,4 @@ opencv-python-headless>=4.9
 numpy<2  # torch 2.2.x is built against numpy 1.x; numpy 2 crashes at runtime
 inference-sdk>=0.9.0
 paddleocr>=2.7  # License plate OCR recognition
+paddlepaddle==3.2.0

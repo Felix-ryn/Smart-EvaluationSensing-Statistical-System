@@ -164,11 +164,17 @@ export function PlateDetectionModal({
             // Ask for confirmation: confidence is lower
             setShowConfirmation(true);
           }
+        
         } catch (err: any) {
-          setError("Error OCR: " + (err.message || "Unknown error"));
+          console.error("OCR request gagal:", err);
+          setError(
+            "Error OCR: " +
+              (err instanceof Error ? err.message : String(err))
+          );
         } finally {
           setLoading(false);
         }
+
       });
     } catch (err: any) {
       setError("Error capturing frame: " + err.message);
