@@ -16,9 +16,11 @@ from datetime import datetime, timezone
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
+from inference_sdk import InferenceHTTPClient
 
 MODEL_PATH = os.environ.get("MODEL_PATH", r"C:\Smart-EvaluationSensing-Statistical-System\models\best.pt")
 CONF = float(os.environ.get("CONF", "0.5"))
@@ -37,6 +39,16 @@ class CameraStartRequest(BaseModel):
     rtspUrl: str = None
 
 app = FastAPI(title="SESS AI")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 model = YOLO(MODEL_PATH)
 NAMES = model.names
 
@@ -123,12 +135,19 @@ def _detect_video(path: str):
     return best
 
 
+
 def _roboflow_client():
     if not ROBOFLOW_API_KEY:
-        raise RuntimeError("ROBOFLOW_API_KEY belum dikonfigurasi di environment container")
-    from inference_sdk import InferenceHTTPClient, InferenceConfiguration
-    client = InferenceHTTPClient(api_url="https://serverless.roboflow.com", api_key=ROBOFLOW_API_KEY)
-    return client.configure(InferenceConfiguration(api_key_transport="header"))
+        raise RuntimeError(
+            "ROBOFLOW_API_KEY belum dikonfigurasi di environment container"
+        )
+
+    client = InferenceHTTPClient(
+        api_url="https://serverless.roboflow.com",
+        api_key=ROBOFLOW_API_KEY,
+    )
+    return client
+
 
 
 def _normalise_predictions(result):
@@ -358,38 +377,60 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
     """Extract license plate text from an image using PaddleOCR."""
     content_type = (file.content_type or "").lower()
     if content_type and not content_type.startswith("image/"):
-        raise HTTPException(status_code=415, detail="File harus berupa gambar")
-    
+        raise HTTPException(
+            status_code=415,
+            detail="File harus berupa gambar",
+        )
+
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="File gambar kosong")
-    
+
     try:
         # Decode image
         arr = np.frombuffer(data, dtype=np.uint8)
         image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if image is None:
             raise ValueError("Gambar tidak dapat dibaca")
-        
-        # Run OCR
+
+        # Run OCR using PaddleOCR 3.x API
         reader = _get_ocr_reader()
-        results = reader.ocr(image, cls=True)
-        
-        # Parse results: extract text and average confidence
+        results = reader.predict(image)
+
+        # Parse PaddleOCR 3.x results
         texts = []
         confidences = []
-        for line in results:
-            if line:
-                for word_info in line:
-                    text = word_info[1]
-                    conf = float(word_info[2])
-                    texts.append(text)
-                    confidences.append(conf)
-        
-        # Combine texts and calculate average confidence
+
+        for result in results or []:
+            # PaddleOCR 3.x may expose the output through result.json
+            if isinstance(result, dict):
+                result_data = result
+            else:
+                result_data = getattr(result, "json", None)
+
+                if callable(result_data):
+                    result_data = result_data()
+
+            # Some versions wrap the OCR output inside "res"
+            if isinstance(result_data, dict):
+                result_data = result_data.get("res", result_data)
+            else:
+                continue
+
+            rec_texts = result_data.get("rec_texts", [])
+            rec_scores = result_data.get("rec_scores", [])
+
+            for text, score in zip(rec_texts, rec_scores):
+                if text and str(text).strip():
+                    texts.append(str(text).strip())
+                    confidences.append(float(score))
+
+        # Combine recognized text and calculate average confidence
         plate_text = " ".join(texts).strip().upper()
-        avg_confidence = float(np.mean(confidences)) if confidences else 0.0
-        
+        avg_confidence = (
+            float(np.mean(confidences)) if confidences else 0.0
+        )
+
         return {
             "success": True,
             "source": "ocr",
@@ -398,6 +439,7 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
             "char_count": len(plate_text),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -405,6 +447,7 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
             status_code=502,
             detail=f"OCR extraction gagal: {str(exc)}",
         ) from exc
+
 
 
 @app.post("/license-plate/camera/start")
