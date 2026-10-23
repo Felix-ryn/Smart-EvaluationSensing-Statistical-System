@@ -90,10 +90,10 @@ def _detect_image(data: bytes):
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("File tidak dapat dibaca sebagai gambar")
-    result = model.predict(img, conf=CONF, verbose=False)[0]
+    result = model.predict(img, conf=CONF, iou=0.5, verbose=False)[0]
     detections = _detections_from_result(result)
     if not detections and LOW_CONF < CONF:
-        result_low = model.predict(img, conf=LOW_CONF, verbose=False)[0]
+        result_low = model.predict(img, conf=LOW_CONF, iou=0.5, verbose=False)[0]
         detections = _detections_from_result(result_low)
     return detections
 
@@ -109,10 +109,10 @@ def _detect_video(path: str):
             if not ok:
                 break
             if idx % step == 0:
-                result = model.predict(frame, conf=CONF, verbose=False)[0]
+                result = model.predict(frame, conf=CONF, iou=0.5, verbose=False)[0]
                 dets = _detections_from_result(result)
                 if not dets and LOW_CONF < CONF:
-                    result_low = model.predict(frame, conf=LOW_CONF, verbose=False)[0]
+                    result_low = model.predict(frame, conf=LOW_CONF, iou=0.5, verbose=False)[0]
                     dets = _detections_from_result(result_low)
                 score = _summary(dets)["violation"] * 100 + len(dets)
                 if score > best_score:

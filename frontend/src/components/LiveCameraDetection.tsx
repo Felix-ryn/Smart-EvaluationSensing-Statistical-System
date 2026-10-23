@@ -38,14 +38,13 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
   const [areas, setAreas] = useState<Area[]>([]);
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [areaNote, setAreaNote] = useState("");
-  const threshold = 0.7; // Fixed: 70% (parking_violation threshold)
-  const cooldown = 5000; // Fixed: 5 seconds in ms
   const [lastSaveTime, setLastSaveTime] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [supportsVibration] = useState(() => "vibrate" in navigator);
   const [lastDetectionResult, setLastDetectionResult] = useState<any>(null);
   const [violations, setViolations] = useState<any[]>([]);
+  const thresholdValue = 0.5; // Frontend threshold: 50%
 
   // Load areas & violations on mount
   useEffect(() => {
@@ -114,6 +113,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
         if (frameCount % 3 !== 0) return; // Sample every 3rd frame (~2.5 FPS)
 
         const now = Date.now();
+        const cooldown = 5000; // 5 seconds in ms
         // Only process if cooldown elapsed
         if (now - lastSaveTime < cooldown) return;
 
@@ -141,7 +141,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
               const violation = data.data?.violation;
 
               // Save only if parking_violation detected with confidence >= 70%
-              if (violation?.violationType === "parking_violation" && violation?.confidence >= threshold) {
+              if (violation?.violationType === "parking_violation" && violation?.confidence >= thresholdValue) {
                 setLastSaveTime(Date.now());
                 
                 // Trigger sound + vibration
@@ -223,11 +223,11 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
         <div className="camera-settings-info">
           <div className="setting-item">
             <strong>Threshold Confidence:</strong>
-            <span>{(threshold * 100).toFixed(0)}%</span>
+            <span>{(thresholdValue * 100).toFixed(0)}%</span>
           </div>
           <div className="setting-item">
             <strong>Cooldown Simpan:</strong>
-            <span>{cooldown / 1000}s</span>
+            <span>5s</span>
           </div>
         </div>
       </div>
@@ -338,7 +338,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
           </table>
 
           <div style={{ fontSize: 13, color: "#6b7280", padding: "8px 0" }}>
-            ✓ Laporan tersimpan otomatis. Cooldown {cooldown / 1000}s sebelum deteksi berikutnya.
+            ✓ Laporan tersimpan otomatis. Cooldown 5s sebelum deteksi berikutnya.
           </div>
         </div>
       )}
