@@ -20,14 +20,13 @@ export function JukirViolations() {
 
   const loadViolations = () => {
     setLoading(true);
-    api.get("/violations/mine")
+    api.get("/violations/jukir-queue")
       .then(({ data }) => {
-        const ilegalOnly = (data.data || [])
-          .filter((v: Violation) => v.violationType === "parking_violation")
+        const violations = (data.data || [])
           .sort((a: Violation, b: Violation) => 
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
-        setViolations(ilegalOnly);
+        setViolations(violations);
       })
       .catch((err) => console.error("Load violations error:", err))
       .finally(() => setLoading(false));

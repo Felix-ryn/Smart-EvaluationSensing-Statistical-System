@@ -6,7 +6,7 @@ import { upload, detectFile, type Detection } from "../lib/ai.js";
 
 export const violationsRouter = Router();
 
-const HIGH_CONF = Number(process.env.VIOLATION_HIGH_CONF ?? 0.7);
+const HIGH_CONF = Number(process.env.VIOLATION_HIGH_CONF ?? 0.5);
 const REVIEW_CONF = Number(process.env.VIOLATION_REVIEW_CONF ?? 0.35);
 
 // Pilih deteksi parking_violation dengan confidence tertinggi.
@@ -32,10 +32,18 @@ violationsRouter.post("/", upload.single("photo"), async (req, res, next) => {
     const violationDet = pickViolation(result.detections);
 
     let violationType: "parking_violation" | "review" | "none" = "none";
+    let message = "Tidak terdeteksi pelanggaran";
     if (violationDet) {
-      if (violationDet.confidence >= HIGH_CONF) violationType = "parking_violation";
-      else if (violationDet.confidence >= REVIEW_CONF) violationType = "review";
-      else violationType = "none";
+      if (violationDet.confidence >= HIGH_CONF) {
+        violationType = "parking_violation";
+        message = "Pelanggaran terdeteksi";
+      } else if (violationDet.confidence >= REVIEW_CONF) {
+        violationType = "review";
+        message = `Pelanggaran terdeteksi tetapi confidence (${(violationDet.confidence * 100).toFixed(1)}%) di bawah threshold`;
+      } else {
+        violationType = "none";
+        message = `Pelanggaran terdeteksi tetapi confidence (${(violationDet.confidence * 100).toFixed(1)}%) di bawah threshold`;
+      }
     }
 
     const violation = await prisma.violation.create({
@@ -58,6 +66,7 @@ violationsRouter.post("/", upload.single("photo"), async (req, res, next) => {
         violation,
         summary: result.summary,
         decision: violationType,
+        message,
         violationDetected: violationType === "parking_violation",
         needsReview: violationType === "review",
         thresholds: { high: HIGH_CONF, review: REVIEW_CONF },
@@ -74,6 +83,41 @@ violationsRouter.get("/mine", requireAuth, async (req, res, next) => {
     const data = await prisma.violation.findMany({
       where: { reportedById: req.user!.id },
       orderBy: { createdAt: "desc" },
+      include: { area: { select: { name: true } } },
+    });
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /api/violations/jukir-queue — laporan untuk jukir validasi (ILLEGAL, area relevan, status PENDING).
+violationsRouter.get("/jukir-queue", requireAuth, async (req, res, next) => {
+  try {
+    const user = req.user!;
+    if (user.role !== "JUKIR") {
+      return res.status(403).json({ success: false, message: "Hanya Jukir yang dapat akses" });
+    }
+
+    // Jukir hanya lihat laporan ILLEGAL yang relevan dengan area kerjanya
+    const where: any = {
+      violationType: "parking_violation",
+      status: "PENDING",
+    };
+
+    // Jika jukir punya area assignment, tampilkan laporan di area itu
+    // Jika tidak, tampilkan semua
+    if (user.areaId) {
+      where.areaId = user.areaId;
+    }
+
+    const data = await prisma.violation.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        area: { select: { name: true } },
+        reportedBy: { select: { name: true } },
+      },
     });
     res.json({ success: true, data });
   } catch (e) {
@@ -108,17 +152,29 @@ violationsRouter.patch("/:id/status", requireAuth, async (req, res, next) => {
     const { status, adminNote } = statusSchema.parse(req.body);
     const violationId = req.params.id;
     
-    // Check: hanya Admin atau Jukir yang buat laporan bisa validasi
     const violation = await prisma.violation.findUnique({ where: { id: violationId } });
     if (!violation) {
       return res.status(404).json({ success: false, message: "Laporan tidak ditemukan" });
     }
     
-    const isAdmin = req.user!.role === "ADMIN";
-    const isReporter = req.user!.id === violation.reportedById;
-    const isJukirReporter = req.user!.role === "JUKIR" && isReporter;
+    const user = req.user!;
+    const isAdmin = user.role === "ADMIN";
+    const isJukir = user.role === "JUKIR";
+    const isReporter = user.id === violation.reportedById;
     
-    if (!isAdmin && !isJukirReporter) {
+    // Admin: bisa validasi semua
+    // Jukir: bisa validasi laporan ILLEGAL yg reporter-nya jukir sendiri OR laporan di area kerjanya
+    if (isAdmin) {
+      // OK
+    } else if (isJukir) {
+      const isJukirReporter = isReporter;
+      const isInJukirArea = user.areaId && violation.areaId === user.areaId;
+      const isIllegal = violation.violationType === "parking_violation";
+      
+      if (!isIllegal || (!isJukirReporter && !isInJukirArea)) {
+        return res.status(403).json({ success: false, message: "Tidak punya akses validasi laporan ini" });
+      }
+    } else {
       return res.status(403).json({ success: false, message: "Tidak punya akses" });
     }
     
