@@ -15,6 +15,7 @@ import { chatbotRouter } from "./routes/chatbot.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { licensePlateRouter } from "./routes/licensePlate.js";
+import { ipcamRouter } from "./routes/ipcam.js";
 import { initializeScheduler } from "./services/scheduler.js";
 import { requireAuth, requireAdmin } from "./middleware/auth.js";
 import { notFound, errorHandler } from "./middleware/error.js";
@@ -30,6 +31,7 @@ app.get("/health", (_req, res) => res.json({ success: true, data: { status: "ok"
 app.use("/api/auth", authRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/license-plate", licensePlateRouter);
+app.use("/api/ipcam", ipcamRouter);
 
 // Public read-only: pengguna anonim bisa melihat area tanpa login.
 app.use("/api/areas", areasRouter);

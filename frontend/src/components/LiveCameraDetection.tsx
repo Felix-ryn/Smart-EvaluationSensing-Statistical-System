@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Camera, Pause, Play, RotateCcw, Settings, Volume2 } from "lucide-react";
+import { AlertCircle, Camera, Pause, Play, RotateCcw, Settings, Smartphone, Volume2, Video } from "lucide-react";
 import { api } from "../api/client";
 
 interface Area {
@@ -33,10 +33,13 @@ interface CameraProps {
 export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER", showViolationsTable = false, hideDetectionResultCard = false, fixedAreaId, fixedAreaName }: CameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ipcamImgRef = useRef<HTMLImageElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [isDetecting, setIsDetecting] = useState(false);
+  const [cameraMode, setCameraMode] = useState<"device" | "ipcam">("device");
+  const [ipCamUrl, setIpCamUrl] = useState("http://10.252.134.94:8080/shot.jpg");
   const [areas, setAreas] = useState<Area[]>([]);
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [areaNote, setAreaNote] = useState("");
@@ -82,6 +85,15 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
   async function startDetection() {
     try {
       setError("");
+      if (cameraMode === "ipcam") {
+        if (!ipCamUrl.trim()) {
+          setError("URL kamera IP wajib diisi");
+          return;
+        }
+        setIsDetecting(true);
+        startFrameProcessing();
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
@@ -109,10 +121,26 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
     setLastDetectionResult(null);
   }
 
+  async function loadIpcamFrame(): Promise<HTMLImageElement | null> {
+    const url = `/api/ipcam/snapshot?url=${encodeURIComponent(ipCamUrl.trim())}`;
+    try {
+      const img = ipcamImgRef.current;
+      if (!img) return null;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Gagal memuat frame kamera"));
+        img.src = `${url}&t=${Date.now()}`;
+      });
+      return img;
+    } catch (err) {
+      throw new Error("Tidak dapat menjangkau kamera IP (periksa URL & jaringan)");
+    }
+  }
+
   function startFrameProcessing() {
     let frameCount = 0;
     detectionIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current || !canvasRef.current) return;
+      if (!canvasRef.current) return;
 
       try {
         frameCount++;
@@ -127,9 +155,25 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
-        canvas.width = 640;
-        canvas.height = (videoRef.current.videoHeight * 640) / videoRef.current.videoWidth;
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        if (cameraMode === "device") {
+          if (!videoRef.current) return;
+          canvas.width = 640;
+          canvas.height = (videoRef.current.videoHeight * 640) / videoRef.current.videoWidth;
+          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        } else {
+          let img: HTMLImageElement;
+          try {
+            img = (await loadIpcamFrame())!;
+          } catch (err: any) {
+            setError(err.message || "Gagal mengambil frame kamera IP");
+            return;
+          }
+          const maxW = 640;
+          const scale = Math.min(1, maxW / img.naturalWidth);
+          canvas.width = Math.round(img.naturalWidth * scale);
+          canvas.height = Math.round(img.naturalHeight * scale);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
 
         // Convert to JPEG
         canvas.toBlob(
@@ -230,6 +274,46 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
           />
         </div>
 
+        <div className="form-group">
+          <label>Sumber Kamera</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className={`btn ${cameraMode === "device" ? "btn-primary" : "btn-outline"}`}
+              onClick={() => { setCameraMode("device"); setError(""); }}
+              disabled={isDetecting}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Smartphone size={16} /> Kamera Perangkat
+            </button>
+            <button
+              type="button"
+              className={`btn ${cameraMode === "ipcam" ? "btn-primary" : "btn-outline"}`}
+              onClick={() => { setCameraMode("ipcam"); setError(""); }}
+              disabled={isDetecting}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Video size={16} /> IP Camera (HP)
+            </button>
+          </div>
+        </div>
+
+        {cameraMode === "ipcam" && (
+          <div className="form-group">
+            <label>URL Kamera IP (snapshot)</label>
+            <input
+              className="input"
+              placeholder="http://10.252.134.94:8080/shot.jpg"
+              value={ipCamUrl}
+              onChange={(e) => setIpCamUrl(e.target.value)}
+              disabled={isDetecting}
+            />
+            <p className="text-muted" style={{ fontSize: 12 }}>
+              Isi URL snapshot kamera HP (aplikasi IP Webcam). Gunakan URL tunnel publik untuk akses beda jaringan.
+            </p>
+          </div>
+        )}
+
         <div className="camera-settings-info">
           <div className="setting-item">
             <strong>Threshold Confidence:</strong>
@@ -251,12 +335,24 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
           muted
           className="camera-preview"
           style={{
-            display: isDetecting ? "block" : "none",
+            display: isDetecting && cameraMode === "device" ? "block" : "none",
             width: "100%",
             borderRadius: 8,
             backgroundColor: "#000",
           }}
         />
+        {cameraMode === "ipcam" && (
+          <img
+            ref={ipcamImgRef}
+            alt="IP Camera preview"
+            style={{
+              display: isDetecting ? "block" : "none",
+              width: "100%",
+              borderRadius: 8,
+              backgroundColor: "#000",
+            }}
+          />
+        )}
         {!isDetecting && (
           <div
             className="camera-placeholder"
