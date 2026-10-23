@@ -26,9 +26,11 @@ interface CameraProps {
   defaultSource?: "USER" | "JUKIR";
   showViolationsTable?: boolean; // Hanya tampil di Jukir
   hideDetectionResultCard?: boolean; // Hide untuk Jukir (hasil langsung ke tabel)
+  fixedAreaId?: string;
+  fixedAreaName?: string;
 }
 
-export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER", showViolationsTable = false, hideDetectionResultCard = false }: CameraProps) {
+export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER", showViolationsTable = false, hideDetectionResultCard = false, fixedAreaId, fixedAreaName }: CameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -48,12 +50,16 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
 
   // Load areas & violations on mount
   useEffect(() => {
-    api.get("/areas").then(({ data }) => {
-      setAreas(data.data || []);
-      if (data.data?.[0]) setSelectedAreaId(data.data[0].id);
-    });
+    if (fixedAreaId) {
+      setSelectedAreaId(fixedAreaId);
+    } else {
+      api.get("/areas").then(({ data }) => {
+        setAreas(data.data || []);
+        if (data.data?.[0]) setSelectedAreaId(data.data[0].id);
+      });
+    }
     loadViolations();
-  }, []);
+  }, [fixedAreaId]);
 
   function loadViolations() {
     api.get("/violations/mine").then(({ data }) => {
@@ -193,18 +199,22 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
       <div style={{ marginBottom: 20 }}>
         <div className="form-group">
           <label>Area Parkir</label>
-          <select
-            className="input"
-            value={selectedAreaId}
-            onChange={(e) => setSelectedAreaId(e.target.value)}
-            disabled={isDetecting}
-          >
-            {areas.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+          {fixedAreaId ? (
+            <input className="input" value={fixedAreaName || ""} readOnly />
+          ) : (
+            <select
+              className="input"
+              value={selectedAreaId}
+              onChange={(e) => setSelectedAreaId(e.target.value)}
+              disabled={isDetecting}
+            >
+              {areas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="form-group">

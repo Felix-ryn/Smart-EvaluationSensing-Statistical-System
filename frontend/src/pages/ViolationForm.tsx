@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Camera, Upload } from "lucide-react";
 import { api } from "../api/client";
 import { LiveCameraDetection } from "../components/LiveCameraDetection";
+import { useAuth } from "../contexts/AuthContext";
 
 interface Area {
   id: string;
@@ -24,23 +25,35 @@ export function ViolationForm({
   onDone?: () => void;
   defaultSource?: "USER" | "JUKIR" | "CCTV";
 }) {
+  const { user } = useAuth();
+  const isJukir = defaultSource === "JUKIR";
   const [activeTab, setActiveTab] = useState<"upload" | "camera">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [areaId, setAreaId] = useState("");
   const [source, setSource] = useState(defaultSource);
   const [note, setNote] = useState("");
   const [areas, setAreas] = useState<Area[]>([]);
+  const [myAreaName, setMyAreaName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isJukir && user?.areaId) {
+      api.get("/areas").then(({ data }) => {
+        const list = (data.data || []) as Area[];
+        setAreas(list);
+        const my = list.find((a) => a.id === user.areaId);
+        if (my) setMyAreaName(my.name);
+      });
+      return;
+    }
     api.get("/areas").then(({ data }) => {
       setAreas(data.data);
       if (data.data[0]) setAreaId(data.data[0].id);
     });
-  }, []);
+  }, [isJukir, user?.areaId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,7 +64,8 @@ export function ViolationForm({
     try {
       const form = new FormData();
       form.append("photo", file);
-      if (areaId) form.append("areaId", areaId);
+      const resolvedAreaId = isJukir ? user?.areaId : areaId;
+      if (resolvedAreaId) form.append("areaId", resolvedAreaId);
       form.append("source", source);
       if (note.trim()) form.append("note", note.trim());
       const { data } = await api.post("/violations", form);
@@ -124,21 +138,27 @@ export function ViolationForm({
         <form onSubmit={submit} className="violation-form-grid">
           <div className="form-group">
             <label>Area Parkir</label>
-            <select className="input" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
-              {areas.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
+            {isJukir ? (
+              <input className="input" value={myAreaName} readOnly />
+            ) : (
+              <select className="input" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
+                {areas.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
-          <div className="form-group">
-            <label>Sumber Laporan</label>
-            <select className="input" value={source} onChange={(e) => setSource(e.target.value as typeof source)}>
-              <option value="USER">User</option>
-              <option value="JUKIR">Jukir</option>
-              <option value="CCTV">CCTV</option>
-            </select>
-          </div>
+          {!isJukir && (
+            <div className="form-group">
+              <label>Sumber Laporan</label>
+              <select className="input" value={source} onChange={(e) => setSource(e.target.value as typeof source)}>
+                <option value="USER">User</option>
+                <option value="JUKIR">Jukir</option>
+                <option value="CCTV">CCTV</option>
+              </select>
+            </div>
+          )}
 
           <div className="form-group">
             <label>Upload Bukti</label>
@@ -215,6 +235,8 @@ export function ViolationForm({
           defaultSource={defaultSource as "USER" | "JUKIR"}
           showViolationsTable={false}
           hideDetectionResultCard={defaultSource === "JUKIR"}
+          fixedAreaId={isJukir ? user?.areaId : undefined}
+          fixedAreaName={isJukir ? myAreaName : undefined}
         />
       )}
     </div>
