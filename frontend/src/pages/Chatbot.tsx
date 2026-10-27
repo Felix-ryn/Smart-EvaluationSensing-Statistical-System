@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageCircle, Send, Loader } from "lucide-react";
+import axios from "axios";
 import { api } from "../api/client";
 
 interface Message {
@@ -27,7 +28,7 @@ export function Chatbot() {
     {
       type: "bot",
       content:
-        "Halo! Saya adalah chatbot parkir Anda. Saya dapat membantu Anda dengan informasi tentang tarif parkir, pelanggaran yang dilaporkan, dan lokasi area parkir. Apa yang bisa saya bantu?",
+        "Halo! Saya adalah chatbot parkir Anda. Saya dapat membantu Anda dengan estimasi tarif parkir, lokasi area parkir, dan jenis kendaraan yang bisa parkir. Apa yang bisa saya bantu?",
       timestamp: new Date(),
     },
   ]);
@@ -69,9 +70,13 @@ export function Chatbot() {
         setMessages((prev) => [...prev, botMessage]);
       }
     } catch (error) {
+      const backendMessage = axios.isAxiosError(error)
+        ? (error.response?.data?.message as string | undefined)
+        : undefined;
       const errorMessage: Message = {
         type: "bot",
-        content: "Maaf, terjadi kesalahan saat memproses pertanyaan Anda. Silakan coba lagi.",
+        content:
+          backendMessage || "Maaf, terjadi kesalahan saat memproses pertanyaan Anda. Silakan coba lagi.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -304,7 +309,7 @@ export function Chatbot() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Tanya tentang tarif parkir, pelanggaran, atau area parkir..."
+            placeholder="Tanya tentang tarif parkir, area parkir, atau jenis kendaraan..."
             disabled={loading}
             className="input"
             style={{
