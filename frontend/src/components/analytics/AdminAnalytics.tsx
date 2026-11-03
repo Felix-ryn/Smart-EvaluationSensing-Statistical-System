@@ -12,6 +12,8 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  BarChart,
+  Bar,
 } from "recharts";
 import {
   clusterColor,
@@ -19,6 +21,7 @@ import {
   fetchAdminSegmentation,
   fetchForecast,
   fetchShiftRevenue,
+  fetchActualRevenue,
   rupiah,
   useAutoRefresh,
 } from "../../api/analytics";
@@ -91,45 +94,122 @@ export function AdminAnalyticsTopCards() {
   );
 }
 
-function ForecastTooltip({ active, payload, label }: any) {
+function MonthlyForecastTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
-  const row = payload[0].payload as { date: string; point: number; lower: number; upper: number };
+  
   return (
     <div className="card" style={{ padding: 10, fontSize: 13, margin: 0 }}>
-      <strong>{new Date(label).toLocaleDateString("id-ID", { dateStyle: "medium" })}</strong>
-      <div>Prediksi: {rupiah(row.point)}</div>
-      <div>Rentang 95%: {rupiah(row.lower)} – {rupiah(row.upper)}</div>
+      <strong>{label}</strong>
+      {payload.map((entry: any, idx: number) => (
+        <div key={idx} style={{ color: entry.color }}>
+          {entry.name}: {rupiah(entry.value)}
+        </div>
+      ))}
     </div>
   );
 }
 
 function ForecastSection() {
   const { data, error, loading, empty } = useAutoRefresh(fetchForecast, REFRESH_MS);
+  const { data: actualData, loading: actualLoading } = useAutoRefresh(() => fetchActualRevenue(90), REFRESH_MS);
 
   const total = data?.TOTAL;
-
+  
+  // Aggregate actual data dari database per bulan
+  const actualDataByMonth = useMemo(() => {
+    if (!actualData || actualData.length === 0) return new Map<string, number>();
+    
+    const buckets = new Map<string, number>();
+    for (const point of actualData) {
+      const d = new Date(point.date);
+      const monthKey = new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString("id-ID", {
+        month: "short",
+        year: "numeric",
+      });
+      // point.total = cash + qris dari /reports/revenue endpoint
+      buckets.set(monthKey, (buckets.get(monthKey) ?? 0) + (point.total ?? 0));
+    }
+    return buckets;
+  }, [actualData]);
+  
+  // Build chart data: merge actual dari DB + forecast dari API
   const chartData = useMemo(() => {
-    if (!total) return [];
-    return total.forecast.map((p) => ({
-      date: p.date,
-      point: p.point,
-      lower: p.lower,
-      upper: p.upper,
-      ciBase: p.lower,
-      ciBand: Math.max(0, p.upper - p.lower),
-    }));
-  }, [total]);
+    if (!total || !actualDataByMonth) return [];
+    
+    // Aggregate forecast data per bulan
+    const monthlyMap = new Map<string, number>();
+    const monthDates = new Map<string, Date>();
+    
+    for (const p of total.forecast) {
+      const d = new Date(p.date);
+      const monthLabel = new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString("id-ID", {
+        month: "short",
+        year: "numeric",
+      });
+      
+      if (!monthDates.has(monthLabel)) {
+        monthDates.set(monthLabel, new Date(d.getFullYear(), d.getMonth(), 1));
+      }
+      monthlyMap.set(monthLabel, (monthlyMap.get(monthLabel) ?? 0) + p.point);
+    }
+    
+    // Store actual month dates
+    for (const monthLabel of actualDataByMonth.keys()) {
+      if (!monthDates.has(monthLabel)) {
+        const [monthName, yearStr] = monthLabel.split(" ");
+        const months: Record<string, number> = {
+          "Jan": 0, "Feb": 1, "Mar": 2, "Apr": 3, "Mei": 4, "Jun": 5,
+          "Jul": 6, "Agu": 7, "Sep": 8, "Okt": 9, "Nov": 10, "Des": 11
+        };
+        const monthNum = months[monthName] ?? 0;
+        const year = parseInt(yearStr);
+        monthDates.set(monthLabel, new Date(year, monthNum, 1));
+      }
+    }
+    
+    // Merge: actual from DB, forecast from API
+    const allMonths = new Set<string>([...actualDataByMonth.keys(), ...monthlyMap.keys()]);
+    
+    return Array.from(allMonths)
+      .sort((a, b) => {
+        const dateA = monthDates.get(a) ?? new Date();
+        const dateB = monthDates.get(b) ?? new Date();
+        return dateA.getTime() - dateB.getTime();
+      })
+      .map((month) => ({
+        month,
+        actual: actualDataByMonth.has(month) ? actualDataByMonth.get(month) : null,
+        forecast: monthlyMap.has(month) ? monthlyMap.get(month) : null,
+      }));
+  }, [total, actualDataByMonth]);
 
   const kpi = useMemo(() => {
     if (!total || total.forecast.length === 0) return null;
     const f = total.forecast;
-    const sum = f.reduce((s, p) => s + p.point, 0);
+    
+    // Sum actual + forecast
+    const actualSum = Array.from(actualDataByMonth.values()).reduce((s, v) => s + v, 0);
+    const forecastSum = f.reduce((s, p) => s + p.point, 0);
+    const sum = actualSum + forecastSum;
+    
+    // Count unique months
+    const monthSet = new Set<string>();
+    for (const p of f) {
+      const d = new Date(p.date);
+      const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+      monthSet.add(monthKey);
+    }
+    // Add actual months
+    for (const month of actualDataByMonth.keys()) {
+      monthSet.add(month);
+    }
+    
     const first = f[0];
     const last = f[f.length - 1];
     const trend = first.point > 0 ? ((last.point - first.point) / first.point) * 100 : 0;
     const ciWidth = last.point > 0 ? ((last.upper - last.lower) / last.point) * 100 : 0;
-    return { sum, avg: sum / f.length, trend, ciWidth, days: f.length };
-  }, [total]);
+    return { sum, avg: sum / monthSet.size, trend, ciWidth, months: monthSet.size };
+  }, [total, actualDataByMonth]);
 
   const monthly = useMemo(() => {
     if (!total) return [];
@@ -172,7 +252,7 @@ function ForecastSection() {
       });
   }, [data]);
 
-  if (loading) return <div className="card"><div className="loading">Memuat forecast...</div></div>;
+  if (loading || actualLoading) return <div className="card"><div className="loading">Memuat forecast & data aktual...</div></div>;
 
   if (empty) {
     return (
@@ -210,7 +290,7 @@ function ForecastSection() {
       <div className="card">
         <h2><TrendingUp className="title-icon" size={20} strokeWidth={1.8} /> Forecast Pendapatan 3 Bulan</h2>
         <p className="text-muted">
-          Horizon {kpi.days} hari · agregat seluruh area · pembaruan otomatis tiap 60 detik
+          Horizon {kpi.months} bulan · agregat seluruh area · pembaruan otomatis tiap 60 detik
         </p>
       </div>
 
@@ -218,21 +298,21 @@ function ForecastSection() {
         <div className="card card-stat">
           <div className="icon-container icon-success"><TrendingUp size={20} strokeWidth={1.8} /></div>
           <div className="stat-content">
-            <span className="stat-label">Total {kpi.days} Hari</span>
+            <span className="stat-label">Total {kpi.months} Bulan</span>
             <span className="stat-value">{compactRupiah(kpi.sum)}</span>
           </div>
         </div>
         <div className="card card-stat">
           <div className="icon-container icon-info"><TrendingUp size={20} strokeWidth={1.8} /></div>
           <div className="stat-content">
-            <span className="stat-label">Rata-rata / Hari</span>
+            <span className="stat-label">Rata-rata / Bulan</span>
             <span className="stat-value">{compactRupiah(kpi.avg)}</span>
           </div>
         </div>
         <div className="card card-stat">
           <div className="icon-container icon-info"><TrendingUp size={20} strokeWidth={1.8} /></div>
           <div className="stat-content">
-            <span className="stat-label">Tren Hari 1 → {kpi.days}</span>
+            <span className="stat-label">Tren Bulan 1 → {kpi.months}</span>
             <span className="stat-value">{kpi.trend >= 0 ? "+" : ""}{kpi.trend.toFixed(1)}%</span>
           </div>
         </div>
@@ -246,46 +326,43 @@ function ForecastSection() {
       </div>
 
       <div className="card">
-        <h2>Proyeksi Harian & Interval Keyakinan</h2>
-        <p className="text-muted">Arahkan kursor ke grafik untuk melihat nilai per tanggal.</p>
+        <h2>Proyeksi Pendapatan per Bulan</h2>
+        <p className="text-muted">Garis biru = data aktual · Garis merah = forecast. Arahkan kursor ke grafik untuk detail.</p>
         <ResponsiveContainer width="100%" height={340}>
-          <ComposedChart data={chartData} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+          <LineChart data={chartData} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E8F0F2" />
-            <XAxis
-              dataKey="date"
-              tickFormatter={(v) => new Date(v).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })}
-              minTickGap={32}
-            />
+            <XAxis dataKey="month" />
             <YAxis tickFormatter={compactRupiah} />
-            <Tooltip content={<ForecastTooltip />} />
+            <Tooltip content={<MonthlyForecastTooltip />} />
             <Legend />
-            <Area
+            <Line
               type="monotone"
-              dataKey="ciBase"
-              stackId="ci"
-              stroke="none"
-              fill="transparent"
-              legendType="none"
-              activeDot={false}
+              dataKey="actual"
+              stroke="#0066cc"
+              strokeWidth={3}
+              dot={{ fill: "#0066cc", r: 6 }}
+              connectNulls={true}
+              name="Data Aktual"
+              isAnimationActive={false}
             />
-            <Area
+            <Line
               type="monotone"
-              dataKey="ciBand"
-              stackId="ci"
-              stroke="none"
-              fill="#0066cc"
-              fillOpacity={0.15}
-              name="Interval 95%"
-              activeDot={false}
+              dataKey="forecast"
+              stroke="#ff4444"
+              strokeWidth={3}
+              strokeDasharray="5 5"
+              dot={{ fill: "#ff4444", r: 6 }}
+              connectNulls={true}
+              name="Forecast"
+              isAnimationActive={false}
             />
-            <Line type="monotone" dataKey="point" stroke="#0066cc" strokeWidth={2} dot={false} name="Prediksi" />
-          </ComposedChart>
+          </LineChart>
         </ResponsiveContainer>
       </div>
 
       <div className="card">
-        <h2>Proyeksi per Bulan</h2>
-        <p className="text-muted">Ringkasan nilai prediksi yang sudah dijumlahkan per bulan kalender.</p>
+        <h2>Ringkasan Proyeksi per Bulan</h2>
+        <p className="text-muted">Nilai agregat per bulan (gabungan seluruh area).</p>
         <div style={{ overflowX: "auto" }}>
           <table className="table">
             <thead>
