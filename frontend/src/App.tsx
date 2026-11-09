@@ -27,8 +27,6 @@ import { JukirTraffic } from "./pages/jukir/Traffic";
 import { AdminLiveTraffic } from "./pages/admin/LiveTraffic";
 import { AdminPajakSetoran } from "./pages/admin/PajakSetoran";
 import { Settings } from "./pages/admin/Settings";
-
-import { Settings } from "./pages/admin/Settings";
 import { LicensePlateCamera } from "./pages/admin/LicensePlateCamera";
 import { CashQris } from "./pages/CashQris";
 
