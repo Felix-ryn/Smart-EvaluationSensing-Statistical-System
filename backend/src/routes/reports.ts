@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
-import { jukirSettlement, reconciliation } from "../lib/business.js";
+import { jukirSettlement, reconciliation, reconciliationSummary, activeTransactionsByArea } from "../lib/business.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 
 export const reportsRouter = Router();
@@ -144,10 +144,31 @@ reportsRouter.get("/jukir-settlement", requireAdmin, async (_req, res, next) => 
   }
 });
 
-// GET /api/reports/reconciliation — bandingkan transaksi aktif vs deteksi CV.
+// GET /api/reports/reconciliation — bandingkan transaksi aktif vs deteksi CV per area.
 reportsRouter.get("/reconciliation", requireAdmin, async (_req, res, next) => {
   try {
     const data = await reconciliation();
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /api/reports/reconciliation/summary — ringkasan monitoring: data availability, scan status.
+reportsRouter.get("/reconciliation/summary", requireAdmin, async (_req, res, next) => {
+  try {
+    const data = await reconciliationSummary();
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /api/reports/reconciliation/active-transactions?areaId=xyz — detail transaksi aktif per area.
+reportsRouter.get("/reconciliation/active-transactions", requireAdmin, async (req, res, next) => {
+  try {
+    const areaId = (req.query.areaId as string) || undefined;
+    const data = await activeTransactionsByArea(areaId);
     res.json({ success: true, data });
   } catch (e) {
     next(e);
