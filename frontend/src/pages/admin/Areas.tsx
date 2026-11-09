@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Layers, MapPin, Plus } from "lucide-react";
+import { Layers, MapPin, Plus, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 
 type AreaStatus = "ACTIVE" | "INACTIVE" | "MAINTENANCE";
@@ -28,6 +28,7 @@ export function Areas() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -110,6 +111,21 @@ export function Areas() {
     }
   }
 
+  async function deleteArea(area: Area) {
+    if (!confirm(`Hapus area "${area.name}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+
+    try {
+      setDeletingId(area.id);
+      setError("");
+      await api.delete(`/areas/${area.id}`);
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.message ?? "Gagal menghapus area");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="page">
       <header className="page-header">
@@ -179,13 +195,14 @@ export function Areas() {
               <th>Status</th>
               <th>Tipe</th>
               <th>Koordinat</th>
+              <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="text-center">Loading...</td></tr>
+              <tr><td colSpan={8} className="text-center">Loading...</td></tr>
             ) : areas.length === 0 ? (
-              <tr><td colSpan={7} className="text-center text-muted">Belum ada area parkir.</td></tr>
+              <tr><td colSpan={8} className="text-center text-muted">Belum ada area parkir.</td></tr>
             ) : (
               areas.map((a) => (
                 <tr key={a.id}>
@@ -213,6 +230,18 @@ export function Areas() {
                     {a.latitude != null && a.longitude != null
                       ? `${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)}`
                       : "-"}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={() => deleteArea(a)}
+                      disabled={deletingId === a.id}
+                      title="Hapus area"
+                    >
+                      <Trash2 size={15} strokeWidth={1.8} />
+                      {deletingId === a.id ? " Menghapus..." : " Hapus"}
+                    </button>
                   </td>
                 </tr>
               ))
