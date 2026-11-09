@@ -69,6 +69,50 @@ areasRouter.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
   }
 });
 
+// DELETE /api/areas/:id — admin menghapus area (ditolak jika masih dipakai).
+areasRouter.delete("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    const area = await prisma.parkingArea.findUnique({ where: { id } });
+    if (!area) {
+      return res.status(404).json({ success: false, message: "Area tidak ditemukan", code: "NOT_FOUND" });
+    }
+
+    const [transactions, jukirs, setoran] = await Promise.all([
+      prisma.transaction.count({ where: { areaId: id } }),
+      prisma.user.count({ where: { areaId: id } }),
+      prisma.setoranEntry.count({ where: { areaId: id } }),
+    ]);
+
+    if (transactions > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Area tidak bisa dihapus karena masih memiliki ${transactions} transaksi.`,
+        code: "AREA_HAS_TRANSACTIONS",
+      });
+    }
+    if (jukirs > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Area tidak bisa dihapus karena masih memiliki ${jukirs} jukir terdaftar. Pindahkan jukir ke area lain terlebih dahulu.`,
+        code: "AREA_HAS_JUKIRS",
+      });
+    }
+    if (setoran > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Area tidak bisa dihapus karena masih memiliki ${setoran} data setoran.`,
+        code: "AREA_HAS_SETORAN",
+      });
+    }
+
+    await prisma.parkingArea.delete({ where: { id } });
+    res.json({ success: true, message: `Area ${area.name} berhasil dihapus` });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // GET /api/areas/:id — detail satu area + available.
 areasRouter.get("/:id", async (req, res, next) => {
   try {
