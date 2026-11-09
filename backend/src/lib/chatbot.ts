@@ -2,7 +2,7 @@ import { prisma } from "../prisma.js";
 import { calculateParkingFee, type ParkingRules } from "./fee.js";
 import { getActiveMou, mouToParkingRules } from "./business.js";
 
-export type Intent = "hitung-tarif" | "tarif" | "violations" | "areas" | "help" | "unknown";
+export type Intent = "hitung-tarif" | "areas" | "vehicle-types" | "private-feature" | "help" | "unknown";
 
 export interface ChatMessage {
   type: "user" | "bot";
@@ -16,11 +16,11 @@ interface ChatResponse {
   data?: Record<string, unknown>;
 }
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
+const FALLBACK_RULES: Record<"motorcycle" | "car", ParkingRules> = {
+  motorcycle: { firstHour: 2000, nextHour: 1000, maximumDaily: 10000 },
+  car: { firstHour: 3000, nextHour: 1500, maximumDaily: 15000 },
+};
 
-/** Parse duration: "3 jam", "2 jam 30 menit", "3h 30m" → { hours, minutes } */
 function parseDuration(input: string): { hours: number; minutes: number } {
   const hourMatch = input.match(/(\d+)\s*(?:jam|j|h|hour|hrs?)/i);
   const minMatch = input.match(/(\d+)\s*(?:menit|min|m)(?!\s*jam)/i);
@@ -31,81 +31,48 @@ function parseDuration(input: string): { hours: number; minutes: number } {
   return { hours: Math.max(1, hours), minutes: Math.max(0, minutes) };
 }
 
-/** Parse vehicle type: "mobil", "motor", "car", "motorcycle" */
 function parseVehicleType(input: string): "motorcycle" | "car" {
   const lower = input.toLowerCase();
   if (lower.includes("mobil") || lower.includes("car")) return "car";
   return "motorcycle";
 }
 
-/** Check user transaction history */
-async function checkUserTransactionHistory(userId: string): Promise<{
-  hasHistory: boolean;
-  totalTransactions: number;
-  totalAmount: number;
-  avgFee: number;
-}> {
-  const transactions = await prisma.transaction.findMany({
-    where: { userId, status: "COMPLETED" },
-    select: { amount: true },
-  });
-
-  const totalAmount = transactions.reduce((sum, t) => sum + (t.amount ?? 0), 0);
-
-  return {
-    hasHistory: transactions.length > 0,
-    totalTransactions: transactions.length,
-    totalAmount,
-    avgFee: transactions.length > 0 ? Math.round(totalAmount / transactions.length) : 0,
-  };
+function normalizeVehicleType(value: string): "motorcycle" | "car" {
+  const lower = value.toLowerCase();
+  if (lower.includes("car") || lower.includes("mobil")) return "car";
+  return "motorcycle";
 }
 
-/** Format time for display: HH:mm */
-function formatTime(date: Date): string {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
+function vehicleTypeLabel(value: string): string {
+  return normalizeVehicleType(value) === "car" ? "Mobil" : "Motor";
 }
-
-// ============================================
-// INTENT DETECTION
-// ============================================
 
 function detectIntent(input: string): Intent {
   const lower = input.toLowerCase();
 
-  // Priority 1: Hitung Tarif - must have duration + fare keywords
-  const hasDuration = /\d+\s*(?:jam|j|h|menit|m)/i.test(lower);
+  const privateFeatureKeywords =
+    lower.includes("riwayat") ||
+    lower.includes("transaksi saya") ||
+    lower.includes("pelanggaran saya") ||
+    lower.includes("laporan saya") ||
+    lower.includes("minggu lalu") ||
+    lower.includes("bulan ini");
+  if (privateFeatureKeywords) return "private-feature";
+
   const hasFareKeyword = /berapa|harga|bayar|tarif|biaya|fee|estimasi|kira.kira/i.test(lower);
+  if (hasFareKeyword) return "hitung-tarif";
 
-  if (hasDuration && hasFareKeyword) {
-    return "hitung-tarif";
-  }
-
-  // Priority 2: General tarif query (history)
   if (
-    lower.includes("tarif") ||
-    lower.includes("bayar") ||
-    lower.includes("biaya") ||
-    lower.includes("harga") ||
-    lower.includes("fee") ||
-    lower.includes("rp")
+    lower.includes("jenis kendaraan") ||
+    lower.includes("kendaraan apa") ||
+    lower.includes("tipe kendaraan") ||
+    lower.includes("kendaraan yang bisa") ||
+    lower.includes("bisa parkir kendaraan") ||
+    lower.includes("motor atau mobil")
   ) {
-    return "tarif";
+    return "vehicle-types";
   }
 
-  // Priority 3: Violations
-  if (
-    lower.includes("pelanggaran") ||
-    lower.includes("violation") ||
-    lower.includes("illegal") ||
-    lower.includes("melanggar") ||
-    lower.includes("denda")
-  ) {
-    return "violations";
-  }
-
-  // Priority 4: Areas
   if (
     lower.includes("area") ||
     lower.includes("lokasi") ||
@@ -118,7 +85,6 @@ function detectIntent(input: string): Intent {
     return "areas";
   }
 
-  // Priority 5: Help
   if (
     lower.includes("bantuan") ||
     lower.includes("help") ||
@@ -131,260 +97,176 @@ function detectIntent(input: string): Intent {
   return "unknown";
 }
 
-// ============================================
-// RESPONSE FORMATTERS
-// ============================================
-
-function formatEstimateFirstTime(
-  vehicleType: string,
+function formatTarifEstimate(
+  vehicleType: "motorcycle" | "car",
   hours: number,
   minutes: number,
-  feeResult: { durationMinutes: number; durationLabel: string; baseFee: number; totalFee: number },
+  feeResult: { totalFee: number },
   rules: ParkingRules,
 ): string {
-  const durationText = hours > 0 ? `${hours} jam${minutes > 0 ? ` ${minutes} menit` : ""}` : `${minutes} menit`;
+  const durationText = `${hours} jam${minutes > 0 ? ` ${minutes} menit` : ""}`;
   const vehicleLabel = vehicleType === "car" ? "mobil" : "motor";
-
   let ratesBreakdown = `• Jam 1: Rp ${rules.firstHour.toLocaleString("id-ID")} (tarif dasar)`;
   if (hours > 1) {
     ratesBreakdown += `\n• Jam 2-${hours}: Rp ${rules.nextHour.toLocaleString("id-ID")}/jam`;
   }
-  if (minutes > 0 && hours === 0) {
-    ratesBreakdown = `• ${minutes} menit: Rp ${rules.firstHour.toLocaleString("id-ID")} (dibulatkan 1 jam)`;
-  }
 
-  return `Anda belum pernah parkir sebelumnya, jadi ini adalah estimasi tarif.
-
-Untuk parkir ${durationText} ${vehicleLabel}:
-**Tarif Estimasi: Rp ${feeResult.totalFee.toLocaleString("id-ID")}**
+  return `Estimasi tarif parkir ${vehicleLabel} untuk ${durationText}:
+**Rp ${feeResult.totalFee.toLocaleString("id-ID")}**
 
 Breakdown:
 ${ratesBreakdown}
-Total: Rp ${feeResult.totalFee.toLocaleString("id-ID")} (max Rp ${rules.maximumDaily.toLocaleString("id-ID")}/hari)
-
-Siap untuk mulai parkir? Kunjungi halaman 'Cari Parkir' untuk memilih area parkir!`;
+Total maksimal per hari: Rp ${rules.maximumDaily.toLocaleString("id-ID")}.`;
 }
 
-function formatEstimateWithHistory(
-  vehicleType: string,
-  hours: number,
-  minutes: number,
-  feeResult: { durationMinutes: number; durationLabel: string; baseFee: number; totalFee: number },
-  history: { totalTransactions: number; totalAmount: number; avgFee: number },
-  rules: ParkingRules,
-): string {
-  const durationText = hours > 0 ? `${hours} jam${minutes > 0 ? ` ${minutes} menit` : ""}` : `${minutes} menit`;
-  const vehicleLabel = vehicleType === "car" ? "mobil" : "motor";
-
-  let ratesBreakdown = `• Jam 1: Rp ${rules.firstHour.toLocaleString("id-ID")} (tarif dasar)`;
-  if (hours > 1) {
-    ratesBreakdown += `\n• Jam 2-${hours}: Rp ${rules.nextHour.toLocaleString("id-ID")}/jam`;
-  }
-
-  return `Berdasarkan riwayat parkir Anda, untuk parkir ${durationText} ${vehicleLabel}:
-**Tarif Estimasi: Rp ${feeResult.totalFee.toLocaleString("id-ID")}**
-
-Breakdown Tarif:
-${ratesBreakdown}
-Total: Rp ${feeResult.totalFee.toLocaleString("id-ID")}
-
-Riwayat Parkir Anda:
-• Total pembayaran: Rp ${history.totalAmount.toLocaleString("id-ID")}
-• Rata-rata tarif: Rp ${history.avgFee.toLocaleString("id-ID")}
-• Total transaksi: ${history.totalTransactions}
-
-Siap lanjutkan parkir?`;
-}
-
-// ============================================
-// QUERY HANDLERS
-// ============================================
-
-async function handleTarifEstimateQuery(input: string, userId: string): Promise<ChatResponse> {
+async function handleTarifEstimateQuery(input: string): Promise<ChatResponse> {
   const { hours, minutes } = parseDuration(input);
   const vehicleType = parseVehicleType(input);
 
-  // Fetch active MouRule with tarif
-  const mou = await getActiveMou();
-  const rules = mouToParkingRules(mou, vehicleType);
+  let rules = FALLBACK_RULES[vehicleType];
+  let fallbackNotice = "";
+  try {
+    const mou = await getActiveMou();
+    rules = mouToParkingRules(mou, vehicleType);
+  } catch {
+    fallbackNotice = "\n\n⚠️ Saat ini sistem memakai tarif default karena data tarif utama belum tersedia.";
+  }
 
-  // Calculate fee
   const checkInTime = new Date();
   const checkOutTime = new Date(checkInTime.getTime() + hours * 60 * 60 * 1000 + minutes * 60 * 1000);
   const feeResult = calculateParkingFee(checkInTime, checkOutTime, rules);
-
-  // Check user history
-  const history = await checkUserTransactionHistory(userId);
-
-  // Format adaptive response
-  const message = history.hasHistory
-    ? formatEstimateWithHistory(vehicleType, hours, minutes, feeResult, history, rules)
-    : formatEstimateFirstTime(vehicleType, hours, minutes, feeResult, rules);
+  const message = formatTarifEstimate(vehicleType, hours, minutes, feeResult, rules);
 
   return {
-    message,
+    message: `${message}${fallbackNotice}`,
     intent: "hitung-tarif",
     data: {
       feeResult,
-      history: history.hasHistory ? history : undefined,
       rules,
       vehicleType,
       duration: { hours, minutes },
+      usedFallbackRules: fallbackNotice.length > 0,
     },
   };
 }
 
-async function handleTarifQuery(input: string, userId: string): Promise<ChatResponse> {
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      userId,
-      status: "COMPLETED",
-    },
-    include: { area: { select: { name: true } } },
-    orderBy: { paidAt: "desc" },
-  });
+async function handleAreasQuery(): Promise<ChatResponse> {
+  try {
+    const areas = await prisma.parkingArea.findMany({
+      where: { status: "ACTIVE" },
+      orderBy: { name: "asc" },
+    });
 
-  const totalAmount = transactions.reduce((sum, t) => sum + (t.amount ?? 0), 0);
-  const avgFee = transactions.length > 0 ? Math.round(totalAmount / transactions.length) : 0;
+    const supportedVehicleTypes = Array.from(new Set(areas.map((a) => normalizeVehicleType(a.vehicleType))));
+    const vehicleTypesText =
+      supportedVehicleTypes.length > 0
+        ? supportedVehicleTypes.map((v) => vehicleTypeLabel(v)).join(", ")
+        : "Motor, Mobil";
 
-  // Group by area for breakdown
-  const areaBreakdown: Record<string, { count: number; total: number }> = {};
-  for (const tx of transactions) {
-    const areaName = tx.area?.name || "Area Unknown";
-    if (!areaBreakdown[areaName]) {
-      areaBreakdown[areaName] = { count: 0, total: 0 };
-    }
-    areaBreakdown[areaName].count++;
-    areaBreakdown[areaName].total += tx.amount ?? 0;
+    const message =
+      areas.length === 0
+        ? "Belum ada area parkir yang tersedia."
+        : `Ada **${areas.length}** area parkir yang tersedia.\nJenis kendaraan yang didukung: **${vehicleTypesText}**.\n\n` +
+          areas
+            .map((a) => `• **${a.name}** (${a.location}) - Kapasitas: ${a.capacity} kendaraan - ${vehicleTypeLabel(a.vehicleType)}`)
+            .join("\n");
+
+    return {
+      message,
+      intent: "areas",
+      data: {
+        totalAreas: areas.length,
+        supportedVehicleTypes,
+        areas: areas.map((a) => ({
+          id: a.id,
+          name: a.name,
+          location: a.location,
+          capacity: a.capacity,
+          vehicleType: normalizeVehicleType(a.vehicleType),
+        })),
+      },
+    };
+  } catch {
+    return {
+      message:
+        "Data lokasi parkir sedang tidak tersedia. Jenis kendaraan yang umumnya didukung: **Motor** dan **Mobil**.",
+      intent: "areas",
+      data: {
+        totalAreas: 0,
+        supportedVehicleTypes: ["motorcycle", "car"],
+      },
+    };
   }
-
-  const message =
-    transactions.length === 0
-      ? `Belum ada riwayat pembayaran parkir Anda.`
-      : `Anda telah membayar **Rp ${totalAmount.toLocaleString("id-ID")}** untuk ${transactions.length} transaksi parkir. Rata-rata tarif: Rp ${avgFee.toLocaleString("id-ID")}.`;
-
-  return {
-    message,
-    intent: "tarif",
-    data: {
-      totalAmount,
-      transactionCount: transactions.length,
-      avgFee,
-      areaBreakdown,
-      transactions: transactions.slice(0, 5), // latest 5
-    },
-  };
 }
 
-async function handleViolationsQuery(input: string, userId: string): Promise<ChatResponse> {
-  const violations = await prisma.violation.findMany({
-    where: { reportedById: userId },
-    include: { area: { select: { name: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+async function handleVehicleTypesQuery(): Promise<ChatResponse> {
+  try {
+    const areas = await prisma.parkingArea.findMany({
+      where: { status: "ACTIVE" },
+      select: { vehicleType: true, name: true, location: true },
+      orderBy: { name: "asc" },
+    });
 
-  const validCount = violations.filter((v) => v.status === "VALID").length;
-  const pendingCount = violations.filter((v) => v.status === "PENDING").length;
-  const rejectedCount = violations.filter((v) => v.status === "REJECTED").length;
+    const supportedVehicleTypes = Array.from(new Set(areas.map((a) => normalizeVehicleType(a.vehicleType))));
+    const vehicleTypeText =
+      supportedVehicleTypes.length > 0
+        ? supportedVehicleTypes.map((v) => `• ${vehicleTypeLabel(v)}`).join("\n")
+        : "• Motor\n• Mobil";
 
-  // Group by type
-  const typeBreakdown: Record<string, number> = {};
-  for (const v of violations) {
-    typeBreakdown[v.violationType] = (typeBreakdown[v.violationType] ?? 0) + 1;
+    const areaExamples = areas
+      .slice(0, 5)
+      .map((a) => `• ${a.name} (${a.location}) - ${vehicleTypeLabel(a.vehicleType)}`)
+      .join("\n");
+
+    return {
+      message:
+        `Jenis kendaraan yang saat ini bisa parkir:\n${vehicleTypeText}` +
+        (areaExamples ? `\n\nContoh area:\n${areaExamples}` : ""),
+      intent: "vehicle-types",
+      data: {
+        supportedVehicleTypes,
+      },
+    };
+  } catch {
+    return {
+      message: "Saat ini jenis kendaraan yang didukung adalah **Motor** dan **Mobil**.",
+      intent: "vehicle-types",
+      data: {
+        supportedVehicleTypes: ["motorcycle", "car"],
+      },
+    };
   }
-
-  // Group by area
-  const areaBreakdown: Record<string, number> = {};
-  for (const v of violations) {
-    const areaName = v.area?.name || "Area Unknown";
-    areaBreakdown[areaName] = (areaBreakdown[areaName] ?? 0) + 1;
-  }
-
-  let message =
-    violations.length === 0
-      ? "Selamat! Tidak ada laporan pelanggaran parkir dari Anda."
-      : `Anda telah melaporkan **${violations.length}** pelanggaran parkir.`;
-
-  if (violations.length > 0) {
-    message += ` Status: ${validCount} valid, ${pendingCount} menunggu verifikasi, ${rejectedCount} ditolak.`;
-  }
-
-  return {
-    message,
-    intent: "violations",
-    data: {
-      totalViolations: violations.length,
-      validCount,
-      pendingCount,
-      rejectedCount,
-      typeBreakdown,
-      areaBreakdown,
-      violations: violations.slice(0, 5), // latest 5
-    },
-  };
 }
 
-async function handleAreasQuery(_input: string): Promise<ChatResponse> {
-  const areas = await prisma.parkingArea.findMany({
-    where: { status: "ACTIVE" },
-    orderBy: { name: "asc" },
-  });
-
-  const message =
-    areas.length === 0
-      ? "Belum ada area parkir yang tersedia."
-      : `Ada **${areas.length}** area parkir yang tersedia:\n\n` +
-        areas
-          .map((a) => `• **${a.name}** (${a.location}) - Kapasitas: ${a.capacity} kendaraan`)
-          .join("\n");
-
-  return {
-    message,
-    intent: "areas",
-    data: {
-      totalAreas: areas.length,
-      areas: areas.map((a) => ({
-        id: a.id,
-        name: a.name,
-        location: a.location,
-        capacity: a.capacity,
-        vehicleType: a.vehicleType,
-      })),
-    },
-  };
-}
-
-// ============================================
-// MAIN HANDLER
-// ============================================
-
-export async function handleChatQuery(userMessage: string, userId: string): Promise<ChatResponse> {
+export async function handleChatQuery(userMessage: string): Promise<ChatResponse> {
   const intent = detectIntent(userMessage);
 
   switch (intent) {
     case "hitung-tarif":
-      return handleTarifEstimateQuery(userMessage, userId);
-    case "tarif":
-      return handleTarifQuery(userMessage, userId);
-    case "violations":
-      return handleViolationsQuery(userMessage, userId);
+      return handleTarifEstimateQuery(userMessage);
     case "areas":
-      return handleAreasQuery(userMessage);
+      return handleAreasQuery();
+    case "vehicle-types":
+      return handleVehicleTypesQuery();
+    case "private-feature":
+      return {
+        message:
+          "Maaf, fitur riwayat parkir/pelanggaran tidak tersedia di chatbot public. Saya hanya bisa bantu tarif parkir, area parkir, dan jenis kendaraan.",
+        intent: "private-feature",
+      };
     case "help":
       return {
         message:
-          "Saya dapat membantu Anda dengan:\n\n" +
-          "• **Hitung Tarif Parkir** - Tanya estimasi tarif untuk durasi tertentu (misal: 3 jam motor bayar berapa?)\n" +
-          "• **Riwayat Tarif Parkir** - Lihat total pembayaran dan breakdown per area\n" +
-          "• **Pelanggaran Parkir** - Lihat riwayat pelanggaran yang Anda laporkan\n" +
-          "• **Lokasi Parkir** - Tanya area parkir mana saja yang tersedia\n\n" +
-          "Contoh pertanyaan: 'Berapa tarif 2 jam mobil?', 'Riwayat parkir saya?', 'Area parkir mana saja?'",
+          "Saya bisa bantu Anda dengan:\n\n" +
+          "• **Hitung Tarif Parkir** (contoh: tarif motor 3 jam berapa?)\n" +
+          "• **Lokasi/Area Parkir** (contoh: area parkir mana saja yang tersedia?)\n" +
+          "• **Jenis Kendaraan** (contoh: jenis kendaraan apa saja yang bisa parkir?)",
         intent: "help",
       };
     default:
       return {
         message:
-          "Maaf, saya tidak memahami pertanyaan Anda. Ketik 'bantuan' untuk melihat pertanyaan yang bisa saya jawab.",
+          "Maaf, saya tidak memahami pertanyaan Anda. Silakan tanya tentang tarif parkir, area parkir, atau jenis kendaraan.",
         intent: "unknown",
       };
   }

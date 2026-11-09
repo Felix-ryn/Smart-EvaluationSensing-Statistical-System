@@ -28,15 +28,10 @@ import { useAuth, type User } from "./contexts/AuthContext";
 const menuConfig = {
   ADMIN: [
     { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { to: "/admin/live-traffic", label: "Live Traffic", icon: Activity },
     { to: "/admin/areas", label: "Area Parkir", icon: ParkingSquare },
-    { to: "/admin/license-plate", label: "Deteksi Pelat", icon: ScanLine },
     { to: "/admin/transactions", label: "Transaksi", icon: CreditCard },
     { to: "/admin/violations", label: "Pelanggaran", icon: AlertTriangle },
-    { to: "/admin/kapasitas", label: "Kapasitas", icon: TrendingUp },
-    { to: "/admin/reports", label: "Laporan", icon: FileText },
-    { to: "/admin/pajak-setoran", label: "Pajak & Setoran", icon: Coins },
-    { to: "/admin/pendapatan", label: "Pendapatan Cash & QRIS", icon: Banknote },
+    { to: "/admin/reports", label: "Laporan & Pajak & Setoran", icon: FileText },
     { to: "/admin/reconciliation", label: "Rekonsiliasi", icon: Scale },
     { to: "/admin/users", label: "Users & Jukir", icon: Users2 },
     { to: "/admin/settings", label: "Pengaturan", icon: Settings },

@@ -170,6 +170,26 @@ export async function fetchShiftRevenue(
   return data.data;
 }
 
+/**
+ * Fetch actual revenue data dari database via /reports/revenue endpoint.
+ * Mengambil data harian untuk 90 hari terakhir (3 bulan).
+ * ponytail: Agregasi daily → monthly di frontend.
+ * Upgrade: Backend bisa return pre-aggregated monthly data untuk performance.
+ */
+export interface ActualRevenuePoint {
+  date: string;
+  cash: number;
+  qris: number;
+  total: number;
+}
+
+export async function fetchActualRevenue(days = 90): Promise<ActualRevenuePoint[]> {
+  const { data } = await api.get("/reports/revenue", {
+    params: { days },
+  });
+  return data.data ?? [];
+}
+
 // ============================================
 // AUTO-REFRESH HOOK
 // ============================================

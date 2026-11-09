@@ -26,9 +26,11 @@ interface CameraProps {
   defaultSource?: "USER" | "JUKIR";
   showViolationsTable?: boolean; // Hanya tampil di Jukir
   hideDetectionResultCard?: boolean; // Hide untuk Jukir (hasil langsung ke tabel)
+  fixedAreaId?: string;
+  fixedAreaName?: string;
 }
 
-export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER", showViolationsTable = false, hideDetectionResultCard = false }: CameraProps) {
+export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER", showViolationsTable = false, hideDetectionResultCard = false, fixedAreaId, fixedAreaName }: CameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -38,23 +40,26 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
   const [areas, setAreas] = useState<Area[]>([]);
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [areaNote, setAreaNote] = useState("");
-  const threshold = 0.7; // Fixed: 70% (parking_violation threshold)
-  const cooldown = 5000; // Fixed: 5 seconds in ms
   const [lastSaveTime, setLastSaveTime] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [supportsVibration] = useState(() => "vibrate" in navigator);
   const [lastDetectionResult, setLastDetectionResult] = useState<any>(null);
   const [violations, setViolations] = useState<any[]>([]);
+  const thresholdValue = 0.5; // Frontend threshold: 50%
 
   // Load areas & violations on mount
   useEffect(() => {
-    api.get("/areas").then(({ data }) => {
-      setAreas(data.data || []);
-      if (data.data?.[0]) setSelectedAreaId(data.data[0].id);
-    });
+    if (fixedAreaId) {
+      setSelectedAreaId(fixedAreaId);
+    } else {
+      api.get("/areas").then(({ data }) => {
+        setAreas(data.data || []);
+        if (data.data?.[0]) setSelectedAreaId(data.data[0].id);
+      });
+    }
     loadViolations();
-  }, []);
+  }, [fixedAreaId]);
 
   function loadViolations() {
     api.get("/violations/mine").then(({ data }) => {
@@ -107,13 +112,14 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
   function startFrameProcessing() {
     let frameCount = 0;
     detectionIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current || !canvasRef.current) return;
+      if (!canvasRef.current) return;
 
       try {
         frameCount++;
         if (frameCount % 3 !== 0) return; // Sample every 3rd frame (~2.5 FPS)
 
         const now = Date.now();
+        const cooldown = 5000; // 5 seconds in ms
         // Only process if cooldown elapsed
         if (now - lastSaveTime < cooldown) return;
 
@@ -121,6 +127,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
+        if (!videoRef.current) return;
         canvas.width = 640;
         canvas.height = (videoRef.current.videoHeight * 640) / videoRef.current.videoWidth;
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
@@ -141,7 +148,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
               const violation = data.data?.violation;
 
               // Save only if parking_violation detected with confidence >= 70%
-              if (violation?.violationType === "parking_violation" && violation?.confidence >= threshold) {
+              if (violation?.violationType === "parking_violation" && violation?.confidence >= thresholdValue) {
                 setLastSaveTime(Date.now());
                 
                 // Trigger sound + vibration
@@ -193,18 +200,22 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
       <div style={{ marginBottom: 20 }}>
         <div className="form-group">
           <label>Area Parkir</label>
-          <select
-            className="input"
-            value={selectedAreaId}
-            onChange={(e) => setSelectedAreaId(e.target.value)}
-            disabled={isDetecting}
-          >
-            {areas.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+          {fixedAreaId ? (
+            <input className="input" value={fixedAreaName || ""} readOnly />
+          ) : (
+            <select
+              className="input"
+              value={selectedAreaId}
+              onChange={(e) => setSelectedAreaId(e.target.value)}
+              disabled={isDetecting}
+            >
+              {areas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="form-group">
@@ -220,14 +231,16 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
           />
         </div>
 
+
+
         <div className="camera-settings-info">
           <div className="setting-item">
             <strong>Threshold Confidence:</strong>
-            <span>{(threshold * 100).toFixed(0)}%</span>
+            <span>{(thresholdValue * 100).toFixed(0)}%</span>
           </div>
           <div className="setting-item">
             <strong>Cooldown Simpan:</strong>
-            <span>{cooldown / 1000}s</span>
+            <span>5s</span>
           </div>
         </div>
       </div>
@@ -235,19 +248,19 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
       {/* Camera Preview & Controls */}
       <div className="camera-preview-container">
         <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="camera-preview"
-          style={{
-            display: isDetecting ? "block" : "none",
-            width: "100%",
-            borderRadius: 8,
-            backgroundColor: "#000",
-          }}
-        />
-        {!isDetecting && (
+           ref={videoRef}
+           autoPlay
+           playsInline
+           muted
+           className="camera-preview"
+           style={{
+             display: isDetecting ? "block" : "none",
+             width: "100%",
+             borderRadius: 8,
+             backgroundColor: "#000",
+           }}
+         />
+         {!isDetecting && (
           <div
             className="camera-placeholder"
             style={{
@@ -338,7 +351,7 @@ export function LiveCameraDetection({ onViolationDetected, defaultSource = "USER
           </table>
 
           <div style={{ fontSize: 13, color: "#6b7280", padding: "8px 0" }}>
-            ✓ Laporan tersimpan otomatis. Cooldown {cooldown / 1000}s sebelum deteksi berikutnya.
+            ✓ Laporan tersimpan otomatis. Cooldown 5s sebelum deteksi berikutnya.
           </div>
         </div>
       )}

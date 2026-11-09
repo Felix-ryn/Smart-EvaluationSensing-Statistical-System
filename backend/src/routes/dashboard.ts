@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
-import { requireAdmin } from "../middleware/auth.js";
+import { requireAuth, requireAdmin } from "../middleware/auth.js";
 
 export const dashboardRouter = Router();
 
 // GET /api/dashboard — ringkasan kartu dashboard admin.
-dashboardRouter.get("/", requireAdmin, async (_req, res, next) => {
+dashboardRouter.get("/", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
