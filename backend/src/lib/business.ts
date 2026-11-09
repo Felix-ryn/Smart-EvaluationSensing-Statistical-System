@@ -111,6 +111,7 @@ export async function reconciliation() {
     const active = area.transactions.length;
     const lastDetection = area.detections[0];
     const cvNormal = lastDetection?.normalCount ?? 0;
+    const cvViolation = lastDetection?.violationCount ?? 0;
     const difference = cvNormal - active;
     return {
       areaId: area.id,
@@ -118,10 +119,96 @@ export async function reconciliation() {
       capacity: area.capacity,
       activeTransactions: active,
       cvDetected: cvNormal,
+      cvViolation,
       difference,
-      // Tidak langsung menuduh; hanya early warning untuk pemeriksaan.
       needsReview: difference !== 0,
       lastDetectedAt: lastDetection?.detectedAt ?? null,
     };
   });
+}
+
+/** Ringkasan monitoring: data availability, scan status per area. */
+export async function reconciliationSummary() {
+  const [
+    totalAreas,
+    areasWithScan,
+    totalActiveTransactions,
+    txWithoutPlate,
+    recentScans,
+  ] = await Promise.all([
+    prisma.parkingArea.count(),
+    prisma.parkingArea.count({
+      where: { detections: { some: {} } },
+    }),
+    prisma.transaction.count({ where: { status: "ACTIVE" } }),
+    prisma.transaction.count({
+      where: { status: "ACTIVE", plateNumber: null },
+    }),
+    prisma.cvDetection.findMany({
+      distinct: ["areaId"],
+      orderBy: { detectedAt: "desc" },
+      take: 100,
+      select: { areaId: true, detectedAt: true },
+    }),
+  ]);
+
+  const areasScanStatus = await prisma.parkingArea.findMany({
+    select: {
+      id: true,
+      name: true,
+      detections: {
+        orderBy: { detectedAt: "desc" },
+        take: 1,
+        select: { detectedAt: true },
+      },
+    },
+  });
+
+  return {
+    totalAreas,
+    areasWithCvScan: areasWithScan,
+    areasWithoutScan: totalAreas - areasWithScan,
+    totalActiveTransactions,
+    transactionsWithoutPlate: txWithoutPlate,
+    areasCvStatus: areasScanStatus.map((a) => ({
+      areaId: a.id,
+      areaName: a.name,
+      lastScanAt: a.detections[0]?.detectedAt ?? null,
+      hasBeenScanned: a.detections.length > 0,
+    })),
+  };
+}
+
+/** Detail transaksi aktif per area untuk monitoring. */
+export async function activeTransactionsByArea(areaId?: string) {
+  const where = areaId ? { status: "ACTIVE" as const, areaId } : { status: "ACTIVE" as const };
+  
+  const transactions = await prisma.transaction.findMany({
+    where,
+    select: {
+      id: true,
+      transactionCode: true,
+      areaId: true,
+      area: { select: { name: true } },
+      jukir: { select: { name: true } },
+      vehicleType: true,
+      plateNumber: true,
+      checkIn: true,
+      createdAt: true,
+    },
+    orderBy: { checkIn: "desc" },
+  });
+
+  return transactions.map((tx) => ({
+    id: tx.id,
+    transactionCode: tx.transactionCode,
+    areaId: tx.areaId,
+    areaName: tx.area.name,
+    jukirName: tx.jukir?.name ?? "—",
+    vehicleType: tx.vehicleType,
+    plateNumber: tx.plateNumber ?? null,
+    checkInTime: tx.checkIn,
+    createdAt: tx.createdAt,
+    hasPlateData: !!tx.plateNumber,
+  }));
 }
