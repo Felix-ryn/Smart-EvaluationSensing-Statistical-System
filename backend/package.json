@@ -10,7 +10,8 @@
     "test": "tsx src/lib/fee.test.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset-jukir-pw": "tsx scripts/reset-jukir-passwords.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

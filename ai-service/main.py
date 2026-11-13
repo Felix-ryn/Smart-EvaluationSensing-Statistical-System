@@ -619,8 +619,9 @@ async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
             }
         ocr_ms = int((time.time() - ocr_start) * 1000)
 
-        # Parse OCR results
-        all_texts = []
+        # Parse OCR results - collect ALL boxes with conf >= 0.3
+        all_texts_raw = []
+        boxes_with_score = []
         for result in results or []:
             if isinstance(result, dict):
                 result_data = result
@@ -635,11 +636,32 @@ async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
                 continue
             
             rec_texts = result_data.get("rec_texts", [])
-            for text in rec_texts:
+            rec_scores = result_data.get("rec_scores", [])
+            rec_polys = result_data.get("rec_polys", [])
+            
+            for i, (text, score) in enumerate(zip(rec_texts, rec_scores)):
                 if text and str(text).strip():
-                    all_texts.append(str(text).strip())
+                    text_clean = str(text).strip()
+                    all_texts_raw.append(text_clean)
+                    
+                    # Collect box with position info
+                    x_center = None
+                    if i < len(rec_polys):
+                        poly = rec_polys[i]
+                        if isinstance(poly, (list, tuple)) and len(poly) >= 4:
+                            try:
+                                xs = [float(pt[0]) for pt in poly]
+                                x_center = (max(xs) + min(xs)) / 2.0
+                            except (TypeError, ValueError, IndexError):
+                                pass
+                    
+                    boxes_with_score.append({
+                        "text": text_clean,
+                        "score": float(score),
+                        "x_center": x_center or 0,
+                    })
 
-        if not all_texts:
+        if not all_texts_raw:
             print(f"[/license-plate/read] no_text")
             return {
                 "success": True,
@@ -654,9 +676,20 @@ async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
-        # Step 4: Extract plate via regex
-        plate = extract_plate(all_texts)
-        raw_text = " ".join(all_texts)
+        # Step 4: Use ALL boxes with confidence >= 0.3, sorted left-to-right
+        high_conf_boxes = [b for b in boxes_with_score if b.get("score", 0) >= 0.3]
+        high_conf_boxes.sort(key=lambda b: b.get("x_center", 0))
+        
+        if high_conf_boxes:
+            selected_texts = [b["text"] for b in high_conf_boxes]
+            raw_text = " ".join(selected_texts)
+            boxes = selected_texts
+        else:
+            raw_text = " ".join(all_texts_raw)
+            boxes = all_texts_raw
+
+        # Extract plate via regex
+        plate = extract_plate(selected_texts if high_conf_boxes else all_texts_raw)
         
         if plate is None:
             print(f"[/license-plate/read] invalid (no match), raw: {raw_text}")
@@ -666,7 +699,7 @@ async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
                 "plate": None,
                 "raw_text": raw_text,
                 "valid": False,
-                "boxes": all_texts,
+                "boxes": boxes,
                 "box": best,
                 "frame_size": frame_size,
                 "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
@@ -681,7 +714,7 @@ async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
             "plate": plate,
             "raw_text": raw_text,
             "valid": True,
-            "boxes": all_texts,
+            "boxes": boxes,
             "box": best,
             "frame_size": frame_size,
             "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
@@ -705,9 +738,6 @@ async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
             status_code=500,
             detail=f"Plate read failed: {str(exc)}",
         ) from exc
-
-
-
 
 @app.post("/license-plate/read")
 async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
@@ -1024,48 +1054,48 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
                     "x_center": x_center,
                 })
 
-        if not lines:
-            # Fallback to concatenated rec_texts (no geometry available).
-            if all_texts:
-                raw_text = " ".join(all_texts)
-            else:
-                # No OCR text found at all.
-                timing_ms = int((time.time() - start_time) * 1000)
-                return {
-                    "success": True,
-                    "source": "ocr",
-                    "status": "no_text",
-                    "text": "",
-                    "raw_text": "",
-                    "confidence": 0.0,
-                    "char_count": 0,
-                    "boxes": [],
-                    "timing_ms": timing_ms,
-                    "valid": False,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
+        if not lines and not all_texts:
+            # No OCR text found at all.
+            timing_ms = int((time.time() - start_time) * 1000)
+            return {
+                "success": True,
+                "source": "ocr",
+                "status": "no_text",
+                "text": "",
+                "raw_text": "",
+                "confidence": 0.0,
+                "char_count": 0,
+                "boxes": [],
+                "timing_ms": timing_ms,
+                "valid": False,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
 
-            plate_text = clean_plate_text(raw_text)
-            boxes = []
-            confidence = 0.0
+        # Collect ALL boxes with conf >= 0.3, sort by x_center (left-to-right)
+        high_conf_boxes = [l for l in lines if l.get("confidence", 0) >= 0.3]
+        high_conf_boxes.sort(key=lambda l: l.get("x_center", 0) or 0)
+        
+        # If no high-conf boxes, use all_texts; otherwise use box texts
+        if high_conf_boxes:
+            box_texts = [l["text"] for l in high_conf_boxes]
+            raw_text = " ".join(box_texts)
+            boxes = box_texts
+            # Confidence = average or max of selected boxes
+            confidence = sum(l.get("confidence", 0) for l in high_conf_boxes) / len(high_conf_boxes)
         else:
-            # Main row = boxes vertically aligned with the tallest box (>= 60%
-            # of its height), so a split plate is re-joined but the small expiry
-            # date box below is discarded. Falls back to first box if no geometry.
-            if any(l["height"] > 0 for l in lines):
-                raw_text = select_main_plate_line(lines)
-            else:
-                raw_text = lines[0]["text"]
+            raw_text = " ".join(all_texts) if all_texts else ""
+            boxes = all_texts if all_texts else []
+            confidence = 0.0
 
-            # Confidence: avoid calling max() on empty sequence.
-            boxes_with_height = [l for l in lines if l["height"] > 0]
-            if boxes_with_height:
-                confidence = max(l["confidence"] for l in boxes_with_height)
-            else:
-                confidence = lines[0]["confidence"] if lines else 0.0
-
-            plate_text = clean_plate_text(raw_text)
-            boxes = [l["text"] for l in lines]
+        # Extract plate via regex on ALL collected text
+        plate = extract_plate(box_texts if high_conf_boxes else all_texts)
+        if plate:
+            plate_text = plate
+            valid = True
+        else:
+            # Fallback to raw text if regex doesn't match
+            plate_text = raw_text
+            valid = False
 
         timing_ms = int((time.time() - start_time) * 1000)
         return {
