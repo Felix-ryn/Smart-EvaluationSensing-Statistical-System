@@ -74,17 +74,12 @@ export function JukirTransactions() {
     try {
       const response = await apiClient.post(`/transactions/${transactionId}/checkout`);
       if (response.data.success) {
-        alert("Checkout berhasil!");
-        fetchTransactions();
+        navigate(`/jukir/payment?tx=${encodeURIComponent(response.data.data.transactionCode)}`);
       }
     } catch (error) {
       console.error("Checkout error:", error);
       alert("Gagal melakukan checkout");
     }
-  };
-
-  const handlePayment = (transactionCode: string) => {
-    navigate(`/jukir/payment?tx=${encodeURIComponent(transactionCode)}`);
   };
 
   const openCreateModal = () => {
@@ -362,12 +357,6 @@ export function JukirTransactions() {
                       {tx.status === "ACTIVE" && !tx.checkOut && (
                         <button className="btn btn-sm btn-outline" onClick={() => handleCheckout(tx.id)}>
                           Checkout
-                        </button>
-                      )}
-
-                      {tx.status === "ACTIVE" && !!tx.checkOut && tx.amount != null && (
-                        <button className="btn btn-sm btn-primary" onClick={() => handlePayment(tx.transactionCode)}>
-                          Bayar
                         </button>
                       )}
                     </div>
