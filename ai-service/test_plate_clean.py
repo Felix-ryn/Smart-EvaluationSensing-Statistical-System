@@ -94,6 +94,18 @@ if extract_plate:
     # Test 5: HONDA (no digits/no full pattern) -> None
     assert extract_plate(["HONDA"]) is None, "extract_plate test 5 failed"
     
-    print("OK: 5 extract_plate tests passed")
+    # Test 6: B 463 UR 16 - 27 (split plate with expiry) -> B 463 UR
+    assert extract_plate(["B", "463", "UR", "16 - 27"]) == "B 463 UR", "extract_plate test 6 failed"
+    
+    # Test 7: B 151 HB 16 - 27 (another split) -> B 151 HB
+    assert extract_plate(["B", "151", "HB", "16 - 27"]) == "B 151 HB", "extract_plate test 7 failed"
+    
+    # Test 8: UR (only letters, no digits) -> None
+    assert extract_plate(["UR"]) is None, "extract_plate test 8 failed"
+    
+    # Test 9: B (single letter, no digits) -> None
+    assert extract_plate(["B"]) is None, "extract_plate test 9 failed"
+    
+    print("OK: 9 extract_plate tests passed")
 else:
     print("WARNING: extract_plate not found, skipping tests")
