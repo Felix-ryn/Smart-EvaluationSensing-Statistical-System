@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Tv, X, RotateCw, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Camera, X, AlertCircle, CheckCircle2 } from "lucide-react";
 
 interface PlateDetectionModalProps {
   vehicleType: "motorcycle" | "car";
@@ -8,298 +8,274 @@ interface PlateDetectionModalProps {
   aiServiceUrl: string;
 }
 
-interface DetectionResult {
-  plate: string;
-  confidence: number;
-  source: "webcam" | "cctv";
+const PLATE_CONFIDENCE_THRESHOLD = 0.6; // Min detection confidence to accept a plate
+const FRAME_INTERVAL_MS = 600; // ~1.6 FPS, one request at a time
+const MAX_FRAME_WIDTH = 640;
+
+// Indonesian plate: 1-2 region letters + 1-4 digits + 0-3 letters.
+// Mirrors the backend `_valid_plate_format`; used as a local gate so the
+// frontend still accepts plates if the backend `valid` flag is absent.
+const PLATE_FORMAT_RE = /^[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{0,3}$/;
+
+function isValidPlate(plate: string): boolean {
+  return PLATE_FORMAT_RE.test(plate);
 }
 
-const OCR_CONFIDENCE_THRESHOLD = 0.85; // User-editable threshold (line 14)
-
 export function PlateDetectionModal({
-  vehicleType,
   onPlateDetected,
   onClose,
   aiServiceUrl,
 }: PlateDetectionModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const inFlightRef = useRef(false);
+  const stoppedRef = useRef(false);
+  const loopTimerRef = useRef<number | null>(null);
 
-  const [source, setSource] = useState<"webcam" | "cctv" | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [webcamActive, setWebcamActive] = useState(false);
-  const [cctvActive, setCCTVActive] = useState(false);
-  const [cctvStatus, setCCTVStatus] = useState<string>("stopped");
-  const [cctvStatusMessage, setCCTVStatusMessage] = useState<string>("");
+  const [ready, setReady] = useState(false);
   const [previewFrame, setPreviewFrame] = useState<string | null>(null);
+  const [detectedPlate, setDetectedPlate] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("Memindai...");
 
-  const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [editedPlate, setEditedPlate] = useState("");
-  const [rtspUrl, setRtspUrl] = useState("");
-  const [showRtspInput, setShowRtspInput] = useState(false);
+  const stopCamera = () => {
+    stoppedRef.current = true;
+    if (loopTimerRef.current) {
+      clearTimeout(loopTimerRef.current);
+      loopTimerRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
 
-  const cctvPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Start camera automatically on mount.
+  useEffect(() => {
+    let cancelled = false;
+    // StrictMode runs mount -> cleanup -> mount in dev; stopCamera() sets
+    // stoppedRef=true in cleanup, so reset here or the loop never runs again.
+    stoppedRef.current = false;
+    inFlightRef.current = false;
+    console.log("[PlateDetection] mount, aiServiceUrl =", aiServiceUrl);
 
-  // Start webcam
-  const startWebcam = async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setWebcamActive(true);
+    const start = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        setReady(true);
+      } catch (err: any) {
+        setError(
+          err.name === "NotAllowedError"
+            ? "Izin kamera ditolak. Berikan akses kamera atau isi plat secara manual."
+            : "Kamera tidak tersedia: " + (err.message || String(err))
+        );
       }
-    } catch (err: any) {
-      const message = err.name === "NotAllowedError" 
-        ? "Izin kamera ditolak. Gunakan input manual."
-        : "Gagal mengakses kamera: " + err.message;
-      setError(message);
-      setWebcamActive(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  // Stop webcam
-  const stopWebcam = () => {
-    if (videoRef.current?.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach((track) => track.stop());
-    }
-    setWebcamActive(false);
-    setPreviewFrame(null);
-  };
+    start();
 
-  // Capture frame from webcam and detect
-  const captureWebcamFrame = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    return () => {
+      cancelled = true;
+      stopCamera();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    setError(null);
-    setLoading(true);
+  // Live detection loop: capture a frame, run detect + OCR, one request at a time.
+  useEffect(() => {
+    if (!ready || detectedPlate) return;
 
-    try {
+    let timer: number | null = null;
+
+    const fetchWithTimeout = (url: string, init: RequestInit, ms: number): Promise<Response> => {
+      const controller = new AbortController();
+      const t = window.setTimeout(() => controller.abort(), ms);
+      return fetch(url, { ...init, signal: controller.signal }).finally(() =>
+        clearTimeout(t)
+      );
+    };
+
+    // Crop the plate box out of the downscaled canvas and return a JPEG blob
+    // (upscaled so its width is >= 400px). Roboflow predictions are center
+    // based: x/y = center, width/height = size, in the uploaded frame pixels.
+    const cropPlate = (canvas: HTMLCanvasElement, p: any): Promise<Blob | null> => {
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const w = p.width || 0;
+      const h = p.height || 0;
+      const cx = p.x || 0;
+      const cy = p.y || 0;
+      const pad = 0.08;
+      let bw = w * (1 + pad * 2);
+      let bh = h * (1 + pad * 2);
+      let bx = cx - bw / 2;
+      let by = cy - bh / 2;
+      // Clamp to frame bounds.
+      bx = Math.max(0, Math.min(bx, cw - bw));
+      by = Math.max(0, Math.min(by, ch - bh));
+      bx = Math.max(0, bx);
+      by = Math.max(0, by);
+      bw = Math.min(bw, cw);
+      bh = Math.min(bh, ch);
+      if (bw <= 0 || bh <= 0) return Promise.resolve(null);
+
+      const out = document.createElement("canvas");
+      const scaleUp = Math.max(1, 400 / bw);
+      out.width = Math.round(bw * scaleUp);
+      out.height = Math.round(bh * scaleUp);
+      const octx = out.getContext("2d");
+      if (!octx) return Promise.resolve(null);
+      octx.drawImage(canvas, bx, by, bw, bh, 0, 0, out.width, out.height);
+      return new Promise((resolve) => out.toBlob(resolve, "image/jpeg", 0.9));
+    };
+
+    const captureAndDetect = async () => {
+      if (stoppedRef.current || detectedPlate) {
+        return;
+      }
+      const video = videoRef.current;
       const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d")!;
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      ctx.drawImage(videoRef.current, 0, 0);
+      if (!video || !canvas || video.videoWidth === 0) {
+        // Video not ready yet; keep polling until it is.
+        if (!stoppedRef.current && !detectedPlate) {
+          timer = window.setTimeout(captureAndDetect, FRAME_INTERVAL_MS);
+        }
+        return;
+      }
 
-      // Convert to blob
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          setError("Gagal menangkap frame dari kamera");
-          setLoading(false);
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        // Downscale frame to max 640px before upload.
+        const scale = Math.min(1, MAX_FRAME_WIDTH / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/jpeg", 0.8)
+        );
+        if (!blob) return;
+
+        setStatus("Memindai...");
+
+        // Step 1: plate detection (Roboflow) -> box + confidence.
+        const detForm = new FormData();
+        detForm.append("file", blob, "frame.jpg");
+        const detStart = performance.now();
+        const detRes = await fetchWithTimeout(
+          `${aiServiceUrl}/license-plate/webcam/detect`,
+          { method: "POST", body: detForm },
+          10000
+        );
+        console.log("[PlateDetection] detect request:", Math.round(performance.now() - detStart), "ms");
+        if (!detRes.ok) {
+          throw new Error(detRes.status === 503 ? "AI service tidak tersedia." : `Deteksi gagal (${detRes.status}).`);
+        }
+        const detData = await detRes.json();
+        if (!detData.success) {
+          throw new Error("Respon AI service tidak valid.");
+        }
+        if (detData.frame) {
+          setPreviewFrame(detData.frame);
+        }
+
+        const predictions = detData.predictions || [];
+        console.log("[PlateDetection] detect predictions:", predictions.length);
+        if (predictions.length === 0) {
+          setError(null); // no plate yet, keep scanning silently
+          setStatus("Plat belum terdeteksi");
           return;
         }
 
-        try {
-          // Step 1: Detect plate bounding box (Roboflow)
-          const formData = new FormData();
-          formData.append("file", blob, "frame.jpg");
+        const best = predictions.reduce((a: any, b: any) =>
+          (b.confidence || 0) > (a.confidence || 0) ? b : a
+        );
 
-          const detRes = await fetch(`${aiServiceUrl}/license-plate/webcam/detect`, {
-            method: "POST",
-            body: formData,
-          });
+        setStatus("Membaca teks plat...");
 
-          if (!detRes.ok) {
-            throw new Error(await detRes.text());
-          }
+        // Step 2: OCR the cropped plate region only.
+        const cropBlob = await cropPlate(canvas, best);
+        if (!cropBlob) return;
 
-          const detData = await detRes.json();
-          if (!detData.success || detData.predictions.length === 0) {
-            setError("Tidak ada plat nomor terdeteksi. Coba lagi atau input manual.");
-            setLoading(false);
-            return;
-          }
-
-          // Show preview with detections
-          if (detData.frame) {
-            setPreviewFrame(detData.frame);
-          }
-
-          // Step 2: Extract plate text using OCR from detected region
-          // For simplicity, send the whole frame to OCR
-          // (In production, could crop the detected region first)
-          const ocrFormData = new FormData();
-          ocrFormData.append("file", blob, "frame.jpg");
-
-          const ocrRes = await fetch(`${aiServiceUrl}/license-plate/ocr`, {
-            method: "POST",
-            body: ocrFormData,
-          });
-
-          if (!ocrRes.ok) {
-            throw new Error(await ocrRes.text());
-          }
-
-          const ocrData = await ocrRes.json();
-          if (!ocrData.success || !ocrData.text) {
-            setError("OCR gagal membaca plat. Coba lagi atau input manual.");
-            setLoading(false);
-            return;
-          }
-
-          // Step 3: Decide based on confidence threshold
-          const result: DetectionResult = {
-            plate: ocrData.text.trim().toUpperCase(),
-            confidence: ocrData.confidence,
-            source: "webcam",
-          };
-
-          setDetectionResult(result);
-          setEditedPlate(result.plate);
-
-          if (result.confidence >= OCR_CONFIDENCE_THRESHOLD) {
-            // Auto-fill: confidence is high enough
-            onPlateDetected(result.plate, result.confidence);
-          } else {
-            // Ask for confirmation: confidence is lower
-            setShowConfirmation(true);
-          }
-        
-        } catch (err: any) {
-          console.error("OCR request gagal:", err);
-          setError(
-            "Error OCR: " +
-              (err instanceof Error ? err.message : String(err))
-          );
-        } finally {
-          setLoading(false);
+        const ocrForm = new FormData();
+        ocrForm.append("file", cropBlob, "plate.jpg");
+        const ocrStart = performance.now();
+        const ocrRes = await fetchWithTimeout(
+          `${aiServiceUrl}/license-plate/ocr`,
+          { method: "POST", body: ocrForm },
+          20000
+        );
+        console.log("[PlateDetection] ocr request:", Math.round(performance.now() - ocrStart), "ms");
+        if (!ocrRes.ok) {
+          throw new Error(ocrRes.status === 503 ? "AI service tidak tersedia." : `OCR gagal (${ocrRes.status}).`);
+        }
+        const ocrData = await ocrRes.json();
+        if (!ocrData.success) {
+          throw new Error("Respon OCR tidak valid.");
         }
 
-      });
-    } catch (err: any) {
-      setError("Error capturing frame: " + err.message);
-      setLoading(false);
-    }
-  };
+        const plate = (ocrData.text || "").trim().toUpperCase();
+        console.log("[PlateDetection] ocr:", {
+          text: plate,
+          boxes: ocrData.boxes,
+          valid: ocrData.valid,
+          confidence: best.confidence,
+        });
 
-  // Start CCTV polling
-  const startCCTV = async (url?: string) => {
-    setError(null);
-    setLoading(true);
-
-    try {
-      const body: Record<string, string> = {};
-      if (url) {
-        body.rtspUrl = url;
-      }
-
-      const startRes = await fetch(`${aiServiceUrl}/license-plate/camera/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-      });
-
-      if (!startRes.ok) {
-        throw new Error(await startRes.text());
-      }
-
-      setCCTVActive(true);
-      setCCTVStatus("starting");
-      setCCTVStatusMessage("Menghubungkan ke CCTV...");
-
-      // Poll status every 500ms
-      if (cctvPollIntervalRef.current) {
-        clearInterval(cctvPollIntervalRef.current);
-      }
-
-      cctvPollIntervalRef.current = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`${aiServiceUrl}/license-plate/camera/status`);
-          const statusData = await statusRes.json();
-
-          if (statusData.success && statusData.data) {
-            const state = statusData.data;
-            setCCTVStatus(state.status);
-            setCCTVStatusMessage(state.message || "");
-            if (state.frame) {
-              setPreviewFrame(state.frame);
-            }
-
-            // If plate detected with high confidence, auto-fill
-            if (state.predictions && state.predictions.length > 0) {
-              const pred = state.predictions[0];
-              if (pred.confidence >= OCR_CONFIDENCE_THRESHOLD) {
-                // Detected plate with high confidence
-                // Note: Roboflow only gives bounding box, not text
-                // We would need to extract and OCR the region
-                // For now, just show detection
-              }
-            }
-          }
-        } catch (err) {
-          // Silent fail on polling error
+        // Accept only the first valid reading (format + detection confidence).
+        const plateConfidence = best.confidence || 0;
+        const formatValid = ocrData.valid ?? isValidPlate(plate);
+        if (plate && formatValid && plateConfidence >= PLATE_CONFIDENCE_THRESHOLD) {
+          setDetectedPlate(plate);
+          setPreviewFrame(detData.frame || null);
+          stopCamera();
+          onPlateDetected(plate, plateConfidence);
+        } else {
+          setStatus(`Bacaan tidak valid: ${plate || "(kosong)"}`);
         }
-      }, 500);
-    } catch (err: any) {
-      setError("Gagal memulai CCTV: " + (err.message || "Unknown error"));
-      setCCTVActive(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Stop CCTV
-  const stopCCTV = async () => {
-    if (cctvPollIntervalRef.current) {
-      clearInterval(cctvPollIntervalRef.current);
-    }
-
-    try {
-      await fetch(`${aiServiceUrl}/license-plate/camera/stop`, {
-        method: "POST",
-      });
-    } catch (err) {
-      // Silent fail
-    }
-
-    setCCTVActive(false);
-    setCCTVStatus("stopped");
-    setCCTVStatusMessage("CCTV dihentikan");
-    setPreviewFrame(null);
-  };
-
-  // Handle confirmation
-  const handleConfirm = () => {
-    if (editedPlate.trim()) {
-      if (detectionResult) {
-        onPlateDetected(editedPlate.toUpperCase(), detectionResult.confidence);
-      }
-    }
-  };
-
-  // Auto-start webcam when source is selected
-  useEffect(() => {
-    if (source === "webcam" && !webcamActive && !error) {
-      startWebcam();
-    }
-  }, [source]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopWebcam();
-      if (cctvActive) {
-        stopCCTV();
+      } catch (err: any) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!stoppedRef.current) {
+          setError(msg);
+          setStatus(msg);
+        }
+      } finally {
+        inFlightRef.current = false;
+        // Ensure status is not stuck mid-stage; loop continues unless stopped.
+        if (!stoppedRef.current && !detectedPlate) {
+          timer = window.setTimeout(captureAndDetect, FRAME_INTERVAL_MS);
+        }
       }
     };
-  }, []);
 
-  // Close modal
+    timer = window.setTimeout(captureAndDetect, 200);
+    loopTimerRef.current = timer;
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, detectedPlate]);
+
   const handleClose = () => {
-    stopWebcam();
-    if (cctvActive) {
-      stopCCTV();
-    }
+    stopCamera();
     onClose();
   };
 
@@ -319,267 +295,61 @@ export function PlateDetectionModal({
             type="button"
             className="btn btn-outline btn-sm"
             onClick={handleClose}
-            disabled={loading}
             aria-label="Tutup"
           >
             <X size={15} strokeWidth={2.2} aria-hidden="true" />
           </button>
         </div>
 
-        {/* Step 1: Choose Source */}
-        {source === null && !detectionResult && (
-          <div className="plate-detection-content">
-            <p className="text-muted mb-3">Pilih sumber kamera untuk mendeteksi plat nomor:</p>
-
-            <div className="plate-source-buttons">
-              <button
-                type="button"
-                className="btn btn-secondary plate-source-btn"
-                onClick={() => setSource("webcam")}
-                disabled={loading}
-              >
-                <Camera size={20} strokeWidth={1.8} aria-hidden="true" /> Webcam
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary plate-source-btn"
-                onClick={() => setSource("cctv")}
-                disabled={loading}
-              >
-                <Tv size={20} strokeWidth={1.8} aria-hidden="true" /> CCTV
-              </button>
-            </div>
-
-            <p className="text-muted text-sm mt-3">
-              Confidence threshold: {(OCR_CONFIDENCE_THRESHOLD * 100).toFixed(0)}% (auto-fill)
-            </p>
-          </div>
-        )}
-
-        {/* Step 2: Webcam Detection */}
-        {source === "webcam" && !showConfirmation && (
-          <div className="plate-detection-content">
-            <div className="webcam-container">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{ width: "100%", height: "auto", borderRadius: "8px" }}
-              />
-              <canvas ref={canvasRef} style={{ display: "none" }} />
-              {loading && !webcamActive && (
-                <div className="loading-overlay">
-                  <p>Meminta izin kamera...</p>
-                </div>
-              )}
-            </div>
-
-            {previewFrame && (
-              <div className="preview-container mt-3">
-                <img src={previewFrame} alt="Plate detection preview" style={{ width: "100%", borderRadius: "8px" }} />
+        <div className="plate-detection-content">
+          <div className="webcam-container">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ width: "100%", height: "auto", borderRadius: "8px" }}
+            />
+            <canvas ref={canvasRef} style={{ display: "none" }} />
+            {!ready && !error && (
+              <div className="loading-overlay">
+                <p>Menyalakan kamera...</p>
               </div>
             )}
-
-            {error && (
-              <div className="alert alert-error mt-3">
-                <AlertCircle size={16} aria-hidden="true" /> {error}
+            {detectedPlate && (
+              <div className="plate-read-overlay">
+                <CheckCircle2 size={40} aria-hidden="true" />
+                <strong>Plat terbaca</strong>
               </div>
             )}
-
-            <div className="actions mt-3">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={captureWebcamFrame}
-                disabled={loading || !webcamActive}
-              >
-                {loading ? "Processing..." : "Ambil Foto & Deteksi"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={() => {
-                  stopWebcam();
-                  setSource(null);
-                  setPreviewFrame(null);
-                  setError(null);
-                }}
-                disabled={loading}
-              >
-                Kembali
-              </button>
-            </div>
           </div>
-        )}
 
-        {/* Step 2a: CCTV URL Input (before connecting) */}
-        {source === "cctv" && !cctvActive && !showConfirmation && (
-          <div className="plate-detection-content">
-            <div className="cctv-setup-form">
-              <h3>Konfigurasi CCTV</h3>
-              <p className="text-muted text-sm mb-3">Masukkan URL RTSP kamera untuk deteksi plat nomor.</p>
-              
-              <div className="form-group">
-                <label htmlFor="rtspUrl">RTSP URL</label>
-                <input
-                  id="rtspUrl"
-                  type="text"
-                  className="input"
-                  value={rtspUrl}
-                  onChange={(e) => setRtspUrl(e.target.value)}
-                  placeholder="Contoh: rtsp://192.168.1.100:554/stream"
-                  disabled={loading}
-                  autoComplete="off"
-                />
-                <p className="text-muted text-xs mt-2">
-                  Format: rtsp://[IP]:[port]/[path]
-                </p>
-              </div>
-
-              {error && (
-                <div className="alert alert-error mt-3">
-                  <AlertCircle size={16} aria-hidden="true" /> {error}
-                </div>
-              )}
-
-              <div className="actions mt-4">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => {
-                    if (!rtspUrl.trim()) {
-                      setError("RTSP URL tidak boleh kosong");
-                      return;
-                    }
-                    startCCTV(rtspUrl.trim());
-                  }}
-                  disabled={loading || !rtspUrl.trim()}
-                >
-                  {loading ? "Menghubungkan..." : "Mulai CCTV"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => {
-                    setSource(null);
-                    setRtspUrl("");
-                    setError(null);
-                  }}
-                  disabled={loading}
-                >
-                  Kembali
-                </button>
-              </div>
+          {previewFrame && !detectedPlate && (
+            <div className="preview-container mt-3">
+              <img src={previewFrame} alt="Plate detection preview" style={{ width: "100%", borderRadius: "8px" }} />
             </div>
+          )}
+
+          <p className="text-muted text-sm mt-3" role="status" aria-live="polite">
+            {status}
+          </p>
+
+          {error && (
+            <div className="alert alert-error mt-3">
+              <AlertCircle size={16} aria-hidden="true" /> {error}
+            </div>
+          )}
+
+          <p className="text-muted text-sm mt-3">
+            Arahkan kamera ke plat nomor. Deteksi berjalan otomatis.
+          </p>
+
+          <div className="actions mt-3">
+            <button type="button" className="btn btn-outline" onClick={handleClose}>
+              Kembali
+            </button>
           </div>
-        )}
-
-        {/* Step 2b: CCTV Detection */}
-        {source === "cctv" && cctvActive && !showConfirmation && (
-          <div className="plate-detection-content">
-            {previewFrame && (
-              <div className="preview-container">
-                <img src={previewFrame} alt="CCTV live preview" style={{ width: "100%", borderRadius: "8px" }} />
-              </div>
-            )}
-
-            <div className="cctv-status mt-3">
-              <div className={`status-badge status-${cctvStatus}`}>
-                {cctvStatus === "running" && <CheckCircle2 size={16} aria-hidden="true" />}
-                {cctvStatus === "reconnecting" && <RotateCw size={16} aria-hidden="true" />}
-                {cctvStatus === "error" && <AlertCircle size={16} aria-hidden="true" />}
-                <span>{cctvStatusMessage}</span>
-              </div>
-            </div>
-
-            {error && (
-              <div className="alert alert-error mt-3">
-                <AlertCircle size={16} aria-hidden="true" /> {error}
-              </div>
-            )}
-
-            <div className="actions mt-3">
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={() => {
-                  stopCCTV();
-                  setSource(null);
-                  setPreviewFrame(null);
-                  setError(null);
-                }}
-              >
-                Hentikan CCTV
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Confirmation (if confidence < 85%) */}
-        {showConfirmation && detectionResult && (
-          <div className="plate-detection-content">
-            <div className="confirmation-container">
-              <h3>Hasil Deteksi</h3>
-
-              {previewFrame && (
-                <img src={previewFrame} alt="Detected plate" style={{ width: "100%", borderRadius: "8px", marginTop: "12px" }} />
-              )}
-
-              <div className="result-info mt-3">
-                <div className="info-row">
-                  <span className="label">Plat Terdeteksi:</span>
-                  <strong className="value">{detectionResult.plate}</strong>
-                </div>
-                <div className="info-row">
-                  <span className="label">Confidence:</span>
-                  <strong className={`value ${detectionResult.confidence >= 0.85 ? "text-success" : "text-warning"}`}>
-                    {(detectionResult.confidence * 100).toFixed(1)}%
-                  </strong>
-                </div>
-              </div>
-
-              <p className="text-muted text-sm mt-3">
-                Confidence di bawah threshold. Periksa dan edit jika diperlukan:
-              </p>
-
-              <div className="form-group mt-3">
-                <label htmlFor="editedPlate">Plat Nomor</label>
-                <input
-                  id="editedPlate"
-                  type="text"
-                  className="input"
-                  value={editedPlate}
-                  onChange={(e) => setEditedPlate(e.target.value.toUpperCase())}
-                  maxLength={15}
-                  placeholder="Edit plat nomor..."
-                />
-              </div>
-
-              <div className="actions mt-3">
-                <button type="button" className="btn btn-primary" onClick={handleConfirm} disabled={!editedPlate.trim()}>
-                  Simpan & Lanjutkan
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => {
-                    setShowConfirmation(false);
-                    setDetectionResult(null);
-                    setEditedPlate("");
-                    setPreviewFrame(null);
-                    setError(null);
-                    if (source === "webcam") {
-                      startWebcam();
-                    }
-                  }}
-                >
-                  Ulangi Deteksi
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
       <style>{`
@@ -591,24 +361,6 @@ export function PlateDetectionModal({
 
         .plate-detection-content {
           padding: 20px;
-        }
-
-        .plate-source-buttons {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-          margin: 16px 0;
-        }
-
-        .plate-source-btn {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 24px 16px;
-          min-height: 100px;
-          font-size: 14px;
         }
 
         .webcam-container {
@@ -635,85 +387,26 @@ export function PlateDetectionModal({
           border-radius: 8px;
         }
 
+        .plate-read-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(34, 197, 94, 0.9);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          color: white;
+          font-size: 18px;
+          border-radius: 8px;
+        }
+
         .preview-container {
           border-radius: 8px;
           overflow: hidden;
-        }
-
-        .cctv-status {
-          display: flex;
-          justify-content: center;
-        }
-
-        .status-badge {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 12px 16px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-        }
-
-        .status-running {
-          background-color: rgba(34, 197, 94, 0.1);
-          color: #22c55e;
-        }
-
-        .status-reconnecting {
-          background-color: rgba(245, 158, 11, 0.1);
-          color: #f59e0b;
-        }
-
-        .status-error {
-          background-color: rgba(239, 68, 68, 0.1);
-          color: #ef4444;
-        }
-
-        .status-stopped {
-          background-color: rgba(107, 114, 128, 0.1);
-          color: #6b7280;
-        }
-
-        .confirmation-container {
-          border-top: 1px solid #e5e7eb;
-          padding-top: 20px;
-        }
-
-        .confirmation-container h3 {
-          margin: 0 0 16px 0;
-          font-size: 16px;
-          font-weight: 600;
-        }
-
-        .result-info {
-          background: #f9fafb;
-          padding: 12px 16px;
-          border-radius: 6px;
-        }
-
-        .info-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin: 8px 0;
-        }
-
-        .info-row .label {
-          font-size: 13px;
-          color: #6b7280;
-        }
-
-        .info-row .value {
-          font-size: 14px;
-        }
-
-        .text-success {
-          color: #22c55e;
-        }
-
-        .text-warning {
-          color: #f59e0b;
         }
 
         .actions {
