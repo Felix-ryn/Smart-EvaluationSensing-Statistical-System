@@ -1,33 +1,49 @@
 import { useState, useEffect } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Clock, FileText, Hourglass, ParkingSquare } from "lucide-react";
 import { apiClient } from "../../api/client";
+import { useAuth } from "../../contexts/AuthContext";
 
 export function JukirTraffic() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [trafficData, setTrafficData] = useState<any>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    // For now, fetch all areas and let Jurik select theirs
-    // In production, would auto-select based on user's areaId
-    fetchTraffic("area-a");
-  }, []);
+    if (user?.areaId) fetchTraffic(user.areaId);
+  }, [user?.areaId]);
 
   const fetchTraffic = async (areaId: string) => {
     try {
       setLoading(true);
+      setError("");
       const response = await apiClient.get(`/jukir/live-traffic/${areaId}`);
       if (response.data.success) {
         setTrafficData(response.data.data);
       }
-    } catch (error) {
-      console.error("Error fetching live traffic:", error);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Gagal memuat traffic");
+      console.error("Error fetching live traffic:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading || !trafficData) {
+  if (loading) {
     return <div className="page"><div className="loading">Loading live traffic...</div></div>;
+  }
+
+  if (error || !trafficData) {
+    return (
+      <div className="page">
+        <header className="page-header">
+          <h1><Activity className="title-icon" size={22} strokeWidth={1.8} aria-hidden="true" /> Live Traffic</h1>
+        </header>
+        <div className="alert alert-danger">
+          <AlertTriangle size={16} strokeWidth={2} aria-hidden="true" /> {error || "Tidak ada data area untuk akun Anda"}
+        </div>
+      </div>
+    );
   }
 
   const occupancyRate = trafficData.occupancyRate;
