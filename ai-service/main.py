@@ -8,6 +8,7 @@ claimed here: the selected Roboflow model currently returns object detections.
 import base64
 import io
 import os
+import re
 import tempfile
 import threading
 import time
@@ -59,6 +60,108 @@ def _get_ocr_reader():
     if _ocr_reader is None:
         _ocr_reader = PaddleOCR(use_angle_cls=True, lang='id')
     return _ocr_reader
+
+
+# Warm-up: load models on startup so first request is not slow.
+def _warmup():
+    """Pre-load OCR and detection models on startup."""
+    try:
+        print("[Warmup] Loading OCR model...")
+        reader = _get_ocr_reader()
+        # Dummy inference on a minimal black image.
+        dummy_img = np.zeros((50, 100, 3), dtype=np.uint8)
+        reader.predict(dummy_img)
+        print("[Warmup] OCR model loaded successfully")
+    except Exception as e:
+        print(f"[Warmup] OCR warmup failed (non-fatal): {e}")
+
+# Run warmup once at module load.
+_warmup()
+
+
+# Expiry-date pattern like "11.31", "11-31", "11 31" (with possible month/year
+# prefix/suffix). We strip it defensively before normalizing whitespace.
+_EXPIRY_RE = re.compile(r"\b\d{1,2}\s*[\.\-\s/]\s*\d{1,2}\b")
+
+# Indonesian plate: 1-2 region letters + 1-4 digits + 1-3 letters (with optional spaces).
+_PLATE_RE = re.compile(r"^[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{0,3}$")
+
+# Pattern to extract plate from concatenated OCR text (with word boundaries).
+# Matches: 1-2 letters, 1-4 digits, 1-3 letters, with optional spaces between.
+_PLATE_EXTRACT_RE = re.compile(r"(?<![A-Z0-9])([A-Z]{1,2})\s?(\d{1,4})\s?([A-Z]{1,3})(?![A-Z0-9])")
+
+
+def _valid_plate_format(plate: str) -> bool:
+    """True when the normalized plate matches the Indonesian format."""
+    if not plate:
+        return False
+    return bool(_PLATE_RE.match(plate))
+
+
+def extract_plate(texts):
+    """Extract plate from a list of OCR-recognized texts.
+    
+    Concatenates all texts, normalizes to uppercase, replaces non-alphanumeric
+    with spaces, then searches for the plate pattern. Returns "R NNNN X" or
+    "RR NNNN XXX" if found, None otherwise.
+    """
+    if not texts:
+        return None
+    joined = " ".join(str(t) for t in texts).upper()
+    joined = re.sub(r"[^A-Z0-9]+", " ", joined)  # dots, tildes, etc. → spaces
+    m = _PLATE_EXTRACT_RE.search(joined)
+    if not m:
+        return None
+    return f"{m.group(1)} {m.group(2)} {m.group(3)}"
+
+
+def clean_plate_text(text: str) -> str:
+    """Normalize a raw OCR line into a canonical Indonesian plate string.
+
+    Removes the expiry-date fragment (e.g. "B 5857 FFT 11.31" -> "B 5857 FFT")
+    and collapses to upper-case with single spaces. Returns "" when nothing
+    plate-like remains.
+    """
+    cleaned = _EXPIRY_RE.sub(" ", text or "")
+    cleaned = re.sub(r"[^A-Za-z0-9]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().upper()
+    return cleaned
+
+
+def select_main_plate_line(lines):
+    """Select the main plate text from OCR line boxes.
+
+    `lines` is a list of dicts with keys "text", "confidence", "height", and
+    "center_y" (optional). The plate is the set of boxes whose height is at
+    least 60% of the tallest box and whose center-y is vertically aligned with
+    the tallest box (difference <= half the tallest box's height). Boxes are
+    sorted left-to-right and joined with a single space. Small boxes below the
+    plate (e.g. the expiry date "28-22") are dropped.
+    """
+    if not lines:
+        return ""
+
+    # Tallest box anchors the main plate row.
+    tallest = max(lines, key=lambda l: l.get("height", 0) or 0)
+    tall_h = tallest.get("height", 0) or 0
+
+    def center_y(l):
+        return l.get("center_y") if l.get("center_y") is not None else None
+
+    main = []
+    tall_cy = center_y(tallest)
+    for l in lines:
+        h = l.get("height", 0) or 0
+        if tall_h > 0 and h < 0.6 * tall_h:
+            continue
+        cy = center_y(l)
+        if tall_cy is not None and cy is not None and tall_h > 0:
+            if abs(cy - tall_cy) > 0.5 * tall_h:
+                continue
+        main.append(l)
+
+    main.sort(key=lambda l: l.get("x_center", 0) or 0)
+    return " ".join(str(l["text"]) for l in main if str(l.get("text", "")).strip())
 
 # Dedicated state for the live license-plate worker; does not touch the existing YOLO model.
 _camera_lock = threading.Lock()
@@ -372,6 +475,470 @@ async def detect_license_plate_webcam_frame(file: UploadFile = File(...)):
     }
 
 
+
+
+@app.post("/license-plate/read")
+async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
+    """Read a license plate from a frame: detect box, crop, OCR, extract plate.
+    
+    Returns plate + metadata in a single HTTP 200 for all business cases.
+    Cropping, OCR, and extraction all happen on the server.
+    """
+    if not ROBOFLOW_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="ROBOFLOW_API_KEY belum dikonfigurasi di environment ai-service",
+        )
+
+    content_type = (file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="File harus berupa gambar")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="File gambar kosong")
+
+    detect_ms = 0
+    ocr_ms = 0
+    
+    try:
+        # Decode image
+        arr = np.frombuffer(data, dtype=np.uint8)
+        image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Gambar tidak dapat dibaca")
+        
+        h_orig, w_orig = image.shape[:2]
+        frame_size = {"w": w_orig, "h": h_orig}
+
+        # Step 1: Detect plate box
+        det_start = time.time()
+        try:
+            predictions, _ = _infer_license_plate_image(data)
+        except Exception as e:
+            raise ValueError(f"Deteksi plat gagal: {e}")
+        detect_ms = int((time.time() - det_start) * 1000)
+
+        # Check for plate detection
+        if not predictions:
+            print(f"[/license-plate/read] no_plate (no predictions)")
+            return {
+                "success": True,
+                "status": "no_plate",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": None,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": 0},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Get highest-confidence prediction
+        best = max(predictions, key=lambda p: p.get("confidence", 0))
+        conf = best.get("confidence", 0)
+        if conf < PLATE_CONFIDENCE:
+            print(f"[/license-plate/read] no_plate (confidence {conf:.2f} < {PLATE_CONFIDENCE})")
+            return {
+                "success": True,
+                "status": "no_plate",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": 0},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Step 2: Crop plate from image
+        cx = best["x"]
+        cy = best["y"]
+        cw = best["width"]
+        ch = best["height"]
+        pad = 0.08
+        
+        bx = cx - (cw / 2) * (1 + pad)
+        by = cy - (ch / 2) * (1 + pad)
+        bw = cw * (1 + pad * 2)
+        bh = ch * (1 + pad * 2)
+        
+        # Clamp to image bounds
+        bx = max(0, min(bx, w_orig - 1))
+        by = max(0, min(by, h_orig - 1))
+        bw = min(bw, w_orig - bx)
+        bh = min(bh, h_orig - by)
+        
+        if bw < 20 or bh < 20:
+            print(f"[/license-plate/read] no_plate (crop too small: {bw:.0f}x{bh:.0f})")
+            return {
+                "success": True,
+                "status": "no_plate",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": 0},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Extract crop as integer coordinates
+        x1 = int(bx)
+        y1 = int(by)
+        x2 = int(bx + bw)
+        y2 = int(by + bh)
+        crop = image[y1:y2, x1:x2]
+        
+        # Upscale crop to min 320px width
+        scale_up = max(1, 320 / crop.shape[1]) if crop.shape[1] > 0 else 1
+        if scale_up > 1:
+            crop = cv2.resize(crop, (int(crop.shape[1] * scale_up), int(crop.shape[0] * scale_up)))
+
+        # Step 3: OCR on crop
+        ocr_start = time.time()
+        try:
+            reader = _get_ocr_reader()
+            results = reader.predict(crop)
+        except Exception as e:
+            print(f"[/license-plate/read] OCR error: {e}")
+            return {
+                "success": True,
+                "status": "invalid",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": int((time.time() - ocr_start) * 1000)},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        ocr_ms = int((time.time() - ocr_start) * 1000)
+
+        # Parse OCR results
+        all_texts = []
+        for result in results or []:
+            if isinstance(result, dict):
+                result_data = result
+            else:
+                result_data = getattr(result, "json", None)
+                if callable(result_data):
+                    result_data = result_data()
+            
+            if isinstance(result_data, dict):
+                result_data = result_data.get("res", result_data)
+            else:
+                continue
+            
+            rec_texts = result_data.get("rec_texts", [])
+            for text in rec_texts:
+                if text and str(text).strip():
+                    all_texts.append(str(text).strip())
+
+        if not all_texts:
+            print(f"[/license-plate/read] no_text")
+            return {
+                "success": True,
+                "status": "no_text",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Step 4: Extract plate via regex
+        plate = extract_plate(all_texts)
+        raw_text = " ".join(all_texts)
+        
+        if plate is None:
+            print(f"[/license-plate/read] invalid (no match), raw: {raw_text}")
+            return {
+                "success": True,
+                "status": "invalid",
+                "plate": None,
+                "raw_text": raw_text,
+                "valid": False,
+                "boxes": all_texts,
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        print(f"[/license-plate/read] ok: {plate}, raw: {raw_text}, timings: {detect_ms}ms detect + {ocr_ms}ms ocr")
+        
+        resp = {
+            "success": True,
+            "status": "ok",
+            "plate": plate,
+            "raw_text": raw_text,
+            "valid": True,
+            "boxes": all_texts,
+            "box": best,
+            "frame_size": frame_size,
+            "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Optionally include debug crop
+        if debug:
+            ok_jpg, jpg_bytes = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            if ok_jpg:
+                b64 = base64.b64encode(jpg_bytes.tobytes()).decode("ascii")
+                resp["debug_crop"] = f"data:image/jpeg;base64,{b64}"
+        
+        return resp
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"[/license-plate/read] server error: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Plate read failed: {str(exc)}",
+        ) from exc
+
+
+
+
+@app.post("/license-plate/read")
+async def read_license_plate(file: UploadFile = File(...), debug: int = 0):
+    """Read a license plate from a frame: detect box, crop, OCR, extract plate.
+    
+    Returns plate + metadata in a single HTTP 200 for all business cases.
+    Cropping, OCR, and extraction all happen on the server.
+    """
+    if not ROBOFLOW_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="ROBOFLOW_API_KEY belum dikonfigurasi di environment ai-service",
+        )
+
+    content_type = (file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="File harus berupa gambar")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="File gambar kosong")
+
+    detect_ms = 0
+    ocr_ms = 0
+    
+    try:
+        # Decode image
+        arr = np.frombuffer(data, dtype=np.uint8)
+        image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Gambar tidak dapat dibaca")
+        
+        h_orig, w_orig = image.shape[:2]
+        frame_size = {"w": w_orig, "h": h_orig}
+
+        # Step 1: Detect plate box
+        det_start = time.time()
+        try:
+            predictions, _ = _infer_license_plate_image(data)
+        except Exception as e:
+            raise ValueError(f"Deteksi plat gagal: {e}")
+        detect_ms = int((time.time() - det_start) * 1000)
+
+        # Check for plate detection
+        if not predictions:
+            print(f"[/license-plate/read] no_plate (no predictions)")
+            return {
+                "success": True,
+                "status": "no_plate",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": None,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": 0},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Get highest-confidence prediction
+        best = max(predictions, key=lambda p: p.get("confidence", 0))
+        conf = best.get("confidence", 0)
+        if conf < PLATE_CONFIDENCE:
+            print(f"[/license-plate/read] no_plate (confidence {conf:.2f} < {PLATE_CONFIDENCE})")
+            return {
+                "success": True,
+                "status": "no_plate",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": 0},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Step 2: Crop plate from image
+        cx = best["x"]
+        cy = best["y"]
+        cw = best["width"]
+        ch = best["height"]
+        pad = 0.08
+        
+        bx = cx - (cw / 2) * (1 + pad)
+        by = cy - (ch / 2) * (1 + pad)
+        bw = cw * (1 + pad * 2)
+        bh = ch * (1 + pad * 2)
+        
+        # Clamp to image bounds
+        bx = max(0, min(bx, w_orig - 1))
+        by = max(0, min(by, h_orig - 1))
+        bw = min(bw, w_orig - bx)
+        bh = min(bh, h_orig - by)
+        
+        if bw < 20 or bh < 20:
+            print(f"[/license-plate/read] no_plate (crop too small: {bw:.0f}x{bh:.0f})")
+            return {
+                "success": True,
+                "status": "no_plate",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": 0},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Extract crop as integer coordinates
+        x1 = int(bx)
+        y1 = int(by)
+        x2 = int(bx + bw)
+        y2 = int(by + bh)
+        crop = image[y1:y2, x1:x2]
+        
+        # Upscale crop to min 320px width
+        scale_up = max(1, 320 / crop.shape[1]) if crop.shape[1] > 0 else 1
+        if scale_up > 1:
+            crop = cv2.resize(crop, (int(crop.shape[1] * scale_up), int(crop.shape[0] * scale_up)))
+
+        # Step 3: OCR on crop
+        ocr_start = time.time()
+        try:
+            reader = _get_ocr_reader()
+            results = reader.predict(crop)
+        except Exception as e:
+            print(f"[/license-plate/read] OCR error: {e}")
+            return {
+                "success": True,
+                "status": "invalid",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": int((time.time() - ocr_start) * 1000)},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        ocr_ms = int((time.time() - ocr_start) * 1000)
+
+        # Parse OCR results
+        all_texts = []
+        for result in results or []:
+            if isinstance(result, dict):
+                result_data = result
+            else:
+                result_data = getattr(result, "json", None)
+                if callable(result_data):
+                    result_data = result_data()
+            
+            if isinstance(result_data, dict):
+                result_data = result_data.get("res", result_data)
+            else:
+                continue
+            
+            rec_texts = result_data.get("rec_texts", [])
+            for text in rec_texts:
+                if text and str(text).strip():
+                    all_texts.append(str(text).strip())
+
+        if not all_texts:
+            print(f"[/license-plate/read] no_text")
+            return {
+                "success": True,
+                "status": "no_text",
+                "plate": None,
+                "raw_text": "",
+                "valid": False,
+                "boxes": [],
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Step 4: Extract plate via regex
+        plate = extract_plate(all_texts)
+        raw_text = " ".join(all_texts)
+        
+        if plate is None:
+            print(f"[/license-plate/read] invalid (no match), raw: {raw_text}")
+            return {
+                "success": True,
+                "status": "invalid",
+                "plate": None,
+                "raw_text": raw_text,
+                "valid": False,
+                "boxes": all_texts,
+                "box": best,
+                "frame_size": frame_size,
+                "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        print(f"[/license-plate/read] ok: {plate}, raw: {raw_text}, timings: {detect_ms}ms detect + {ocr_ms}ms ocr")
+        
+        resp = {
+            "success": True,
+            "status": "ok",
+            "plate": plate,
+            "raw_text": raw_text,
+            "valid": True,
+            "boxes": all_texts,
+            "box": best,
+            "frame_size": frame_size,
+            "timings_ms": {"detect": detect_ms, "ocr": ocr_ms},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Optionally include debug crop
+        if debug:
+            ok_jpg, jpg_bytes = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            if ok_jpg:
+                b64 = base64.b64encode(jpg_bytes.tobytes()).decode("ascii")
+                resp["debug_crop"] = f"data:image/jpeg;base64,{b64}"
+        
+        return resp
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"[/license-plate/read] server error: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Plate read failed: {str(exc)}",
+        ) from exc
+
+
 @app.post("/license-plate/ocr")
 async def extract_license_plate_text(file: UploadFile = File(...)):
     """Extract license plate text from an image using PaddleOCR."""
@@ -386,6 +953,7 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
     if not data:
         raise HTTPException(status_code=400, detail="File gambar kosong")
 
+    start_time = time.time()
     try:
         # Decode image
         arr = np.frombuffer(data, dtype=np.uint8)
@@ -397,9 +965,11 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
         reader = _get_ocr_reader()
         results = reader.predict(image)
 
-        # Parse PaddleOCR 3.x results
-        texts = []
-        confidences = []
+        # Parse PaddleOCR 3.x results. We keep each recognized line with its
+        # bounding box so we can select the main line (largest height) instead
+        # of concatenating a small expiry date line below the plate.
+        lines = []
+        all_texts = []
 
         for result in results or []:
             # PaddleOCR 3.x may expose the output through result.json
@@ -419,24 +989,95 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
 
             rec_texts = result_data.get("rec_texts", [])
             rec_scores = result_data.get("rec_scores", [])
+            rec_boxes = result_data.get("rec_boxes", [])
+            rec_polys = result_data.get("rec_polys", rec_boxes)
 
-            for text, score in zip(rec_texts, rec_scores):
-                if text and str(text).strip():
-                    texts.append(str(text).strip())
-                    confidences.append(float(score))
+            # Log the raw OCR output for debugging
+            print(f"[OCR] keys in result_data: {list(result_data.keys())}")
+            print(f"[OCR] rec_texts count: {len(rec_texts)}, rec_polys count: {len(rec_polys)}, rec_boxes count: {len(rec_boxes)}")
+            print(f"[OCR] raw rec_texts: {rec_texts}")
 
-        # Combine recognized text and calculate average confidence
-        plate_text = " ".join(texts).strip().upper()
-        avg_confidence = (
-            float(np.mean(confidences)) if confidences else 0.0
-        )
+            for i, (text, score) in enumerate(zip(rec_texts, rec_scores)):
+                if not text or not str(text).strip():
+                    continue
+                text_clean = str(text).strip()
+                all_texts.append(text_clean)
+                height = 0.0
+                center_y = None
+                x_center = None
+                poly = rec_polys[i] if i < len(rec_polys) else None
+                if isinstance(poly, (list, tuple)) and len(poly) >= 4:
+                    try:
+                        ys = [float(pt[1]) for pt in poly]
+                        xs = [float(pt[0]) for pt in poly]
+                        if ys and xs:
+                            height = max(ys) - min(ys)
+                            center_y = (max(ys) + min(ys)) / 2.0
+                            x_center = (max(xs) + min(xs)) / 2.0
+                    except (TypeError, ValueError, IndexError):
+                        height = 0.0
+                lines.append({
+                    "text": text_clean,
+                    "confidence": float(score),
+                    "height": height,
+                    "center_y": center_y,
+                    "x_center": x_center,
+                })
 
+        if not lines:
+            # Fallback to concatenated rec_texts (no geometry available).
+            if all_texts:
+                raw_text = " ".join(all_texts)
+            else:
+                # No OCR text found at all.
+                timing_ms = int((time.time() - start_time) * 1000)
+                return {
+                    "success": True,
+                    "source": "ocr",
+                    "status": "no_text",
+                    "text": "",
+                    "raw_text": "",
+                    "confidence": 0.0,
+                    "char_count": 0,
+                    "boxes": [],
+                    "timing_ms": timing_ms,
+                    "valid": False,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            plate_text = clean_plate_text(raw_text)
+            boxes = []
+            confidence = 0.0
+        else:
+            # Main row = boxes vertically aligned with the tallest box (>= 60%
+            # of its height), so a split plate is re-joined but the small expiry
+            # date box below is discarded. Falls back to first box if no geometry.
+            if any(l["height"] > 0 for l in lines):
+                raw_text = select_main_plate_line(lines)
+            else:
+                raw_text = lines[0]["text"]
+
+            # Confidence: avoid calling max() on empty sequence.
+            boxes_with_height = [l for l in lines if l["height"] > 0]
+            if boxes_with_height:
+                confidence = max(l["confidence"] for l in boxes_with_height)
+            else:
+                confidence = lines[0]["confidence"] if lines else 0.0
+
+            plate_text = clean_plate_text(raw_text)
+            boxes = [l["text"] for l in lines]
+
+        timing_ms = int((time.time() - start_time) * 1000)
         return {
             "success": True,
             "source": "ocr",
             "text": plate_text,
-            "confidence": round(avg_confidence, 4),
+            "raw_text": raw_text if lines else " ".join(all_texts),
+            "confidence": round(confidence, 4),
             "char_count": len(plate_text),
+            "valid": _valid_plate_format(plate_text),
+            "boxes": boxes,
+            "timing_ms": timing_ms,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -444,7 +1085,7 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=502,
+            status_code=500,
             detail=f"OCR extraction gagal: {str(exc)}",
         ) from exc
 
