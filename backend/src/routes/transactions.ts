@@ -200,15 +200,24 @@ transactionsRouter.get("/", requireAuth, async (req, res, next) => {
       whereClause = { ...whereClause, status: status as "ACTIVE" | "COMPLETED" | "CANCELLED" };
     }
     
-    const data = await prisma.transaction.findMany({
-      where: whereClause,
-      include: { 
-        area: { select: { name: true } }, 
-        jukir: { select: { name: true, email: true } } 
-      },
-      orderBy: { checkIn: "desc" },
-    });
-    res.json({ success: true, data });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 50);
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await prisma.$transaction([
+      prisma.transaction.findMany({
+        where: whereClause,
+        include: {
+          area: { select: { name: true } },
+          jukir: { select: { name: true, email: true } }
+        },
+        orderBy: { checkIn: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.transaction.count({ where: whereClause }),
+    ]);
+    res.json({ success: true, data, total, page, totalPages: Math.ceil(total / limit) });
   } catch (e) {
     next(e);
   }

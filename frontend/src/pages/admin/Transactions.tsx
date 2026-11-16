@@ -14,6 +14,7 @@ interface Tx {
   amount: number | null;
   paymentMethod: "CASH" | "QRIS" | null;
   status: string;
+  plateNumber: string | null;
   area?: { name: string };
   jukir?: { name: string } | null;
 }
@@ -25,28 +26,29 @@ export function Transactions() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [newAreaId, setNewAreaId] = useState("");
+  const [filterAreaId, setFilterAreaId] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   const load = () =>
     api
-      .get("/transactions")
-      .then(({ data }) => setTxs(data.data))
+      .get("/transactions", { params: { page, limit: 50, areaId: filterAreaId || undefined } })
+      .then(({ data }) => {
+        setTxs(data.data);
+        setTotalPages(data.totalPages || 1);
+      })
       .catch((err) => setError(err.response?.data?.message ?? "Gagal memuat"))
       .finally(() => setLoading(false));
 
   useEffect(() => {
-    load();
-    api.get("/areas").then(({ data }) => {
-      setAreas(data.data);
-      if (data.data[0]) setNewAreaId(data.data[0].id);
-    });
+    api.get("/areas").then(({ data }) => setAreas(data.data));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function checkIn() {
-    if (!newAreaId) return;
-    await api.post("/transactions", { areaId: newAreaId });
+  useEffect(() => {
     load();
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, filterAreaId]);
 
   async function checkout(id: string) {
     await api.post(`/transactions/${id}/checkout`);
@@ -65,23 +67,29 @@ export function Transactions() {
     <div>
       <div className="page-header">Transaksi Parkir</div>
 
-      <div className="card" style={{ marginBottom: 16, maxWidth: 480 }}>
-        <h3 style={{ marginTop: 0 }}>Kendaraan Masuk</h3>
-        <div style={{ display: "flex", gap: 8 }}>
-          <select value={newAreaId} onChange={(e) => setNewAreaId(e.target.value)} style={{ flex: 1 }}>
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <label style={{ fontSize: 13, color: "#6b7280" }}>Filter Area</label>
+          <select
+            value={filterAreaId}
+            onChange={(e) => {
+              setFilterAreaId(e.target.value);
+              setPage(1);
+            }}
+            style={{ maxWidth: 240 }}
+          >
+            <option value="">Semua Area</option>
             {areas.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
-          <button className="btn" onClick={checkIn}>Masuk</button>
         </div>
-      </div>
 
-      <div className="card">
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
               <th style={th}>Kode</th>
+              <th style={th}>Plat</th>
               <th style={th}>Area</th>
               <th style={th}>Masuk</th>
               <th style={th}>Keluar</th>
@@ -95,6 +103,7 @@ export function Transactions() {
             {txs.map((t) => (
               <tr key={t.id}>
                 <td style={td}><strong>{t.transactionCode}</strong></td>
+                <td style={td}>{t.plateNumber ?? "—"}</td>
                 <td style={td}>{t.area?.name}</td>
                 <td style={td}>{new Date(t.checkIn).toLocaleString("id-ID")}</td>
                 <td style={td}>{t.checkOut ? new Date(t.checkOut).toLocaleString("id-ID") : "—"}</td>
@@ -126,6 +135,12 @@ export function Transactions() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+        <button className="btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
+        <span>Halaman {page} dari {totalPages}</span>
+        <button className="btn" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
       </div>
     </div>
   );

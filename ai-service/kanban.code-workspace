@@ -1,0 +1,55 @@
+{
+	"folders": [
+		{
+			"path": "../../kanban"
+		},
+		{
+			"path": "../../generatordokumen"
+		},
+		{
+			"path": "../../Users/USER/Downloads/Tugas Akhir"
+		},
+		{
+			"path": "../../Tugas Pens/semester 5/data processing workflow/environmentsetting"
+		},
+		{
+			"path": "../../Tugas Pens/semester 5/praktikum neuro computing"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../Users/USER/Downloads/api_ingestion"
+		},
+		{
+			"path": "../../Tugas Pens/semester 5/LLM/chatbot"
+		},
+		{
+			"path": "../../Tugas Pens/semester 5/neuro computing"
+		},
+		{
+			"path": "../../newportofolio"
+		},
+		{
+			"path": "../../ae_lab"
+		},
+		{
+			"path": "../../Users/USER/Downloads/Modul-3-Artefak-3/Modul-3-Artefak-3"
+		},
+		{
+			"path": "../../praktikum-data-contract"
+		},
+		{
+			"path": "../../Users/USER/Downloads/Paket_Pendukung_Mini_Project/data_processing_miniproject"
+		},
+		{
+			"path": "../../Users/USER/Downloads/data_processing_miniproject_lengkap/data_processing_miniproject"
+		},
+		{
+			"path": "../../Tugas Pens/semester 5/presentasi data dan storytelling"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "Smart-EvaluationSensing-Statistical-System"
+	}
+}
