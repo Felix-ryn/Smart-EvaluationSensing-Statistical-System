@@ -71,11 +71,22 @@ export async function areaRevenue(areaId?: string): Promise<number> {
  * setoranJukir = kewajiban - total yang sudah tercatat dari QRIS
  * (sisa yang harus diselesaikan/disetorkan dari transaksi cash)
  */
-export async function jukirSettlement() {
+export async function jukirSettlement(filters?: { from?: Date; to?: Date; areaIds?: string[] }) {
   const mou = await getActiveMou();
+  const where: any = { status: "COMPLETED", amount: { not: null } };
+  if (filters?.from || filters?.to) {
+    where.paidAt = {
+      ...(filters.from ? { gte: filters.from } : {}),
+      ...(filters.to ? { lt: filters.to } : {}),
+    };
+  }
+  if (filters?.areaIds?.length) {
+    where.areaId = { in: filters.areaIds };
+  }
+
   const totals = await prisma.transaction.groupBy({
     by: ["paymentMethod"],
-    where: { status: "COMPLETED", amount: { not: null } },
+    where,
     _sum: { amount: true },
   });
 
@@ -89,6 +100,7 @@ export async function jukirSettlement() {
 
   return {
     mou,
+    taxPercent: mou.taxPercent,
     totalRevenue,
     cash,
     qris,

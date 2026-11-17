@@ -70,33 +70,27 @@ type FilterStatus = "ALL" | "PENDING" | "APPROVED" | "REJECTED";
 
 const rupiah = (n: number) => "Rp " + n.toLocaleString("id-ID");
 
-// Dummy data fallback
-const DUMMY_REVENUE: RevenuePoint[] = [
-  { month: "Sep 2026", cash: 2100000, qris: 1150000, total: 3250000 },
-  { month: "Oct 2026", cash: 2350000, qris: 1300000, total: 3650000 },
-  { month: "Nov 2026", cash: 1950000, qris: 1100000, total: 3050000 },
-];
-
-const DUMMY_SUMMARY: Summary = {
-  totalRevenue: 5360000,
-  totalTransactions: 742,
-  activeTransactions: 38,
-  cashRevenue: 3405000,
-  qrisRevenue: 1955000,
+const EMPTY_SUMMARY: Summary = {
+  totalRevenue: 0,
+  totalTransactions: 0,
+  activeTransactions: 0,
+  cashRevenue: 0,
+  qrisRevenue: 0,
 };
 
-const DUMMY_SETTLEMENT: Settlement = {
-  taxPercent: 30,
-  totalRevenue: 5360000,
-  cash: 3405000,
-  qris: 1955000,
-  taxAmount: 1608000,
-  settlementFromCash: 1797000,
+const EMPTY_SETTLEMENT: Settlement = {
+  taxPercent: 0,
+  totalRevenue: 0,
+  cash: 0,
+  qris: 0,
+  taxAmount: 0,
+  settlementFromCash: 0,
 };
 
 export function ReportsPajakSetoran() {
   const [activeTab, setActiveTab] = useState<TabType>("reports");
   const [areas, setAreas] = useState<Area[]>([]);
+  const [areasLoading, setAreasLoading] = useState(true);
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   
   // Date range state
@@ -114,7 +108,6 @@ export function ReportsPajakSetoran() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [revenue, setRevenue] = useState<RevenuePoint[]>([]);
   const [settlement, setSettlement] = useState<Settlement | null>(null);
-  const [isDummy, setIsDummy] = useState(false);
 
   // Pajak & Setoran tab state
   const [loading, setLoading] = useState(true);
@@ -133,29 +126,43 @@ export function ReportsPajakSetoran() {
         setSelectedAreas(areasData.map((a) => a.id));
       } catch (err) {
         console.error("Error fetching areas:", err);
+      } finally {
+        setAreasLoading(false);
       }
     };
     fetchAreas();
   }, []);
 
+  const dateRangeInvalid = !!fromDate && !!toDate && fromDate > toDate;
+  const noAreaSelected = !areasLoading && selectedAreas.length === 0;
+
   // Fetch reports data when tab/filters change
   useEffect(() => {
     if (activeTab === "reports") {
+      if (noAreaSelected || dateRangeInvalid) {
+        setSummary(null);
+        setSettlement(null);
+        setRevenue([]);
+        return;
+      }
       fetchReportsData();
     }
-  }, [fromDate, toDate, selectedAreas, activeTab]);
+  }, [fromDate, toDate, selectedAreas, activeTab, noAreaSelected, dateRangeInvalid]);
 
   // Fetch setoran data when tab/filters change
   useEffect(() => {
     if (activeTab === "pajak" || activeTab === "setoran") {
+      if (noAreaSelected || dateRangeInvalid) {
+        setReport(null);
+        setLoading(false);
+        return;
+      }
       fetchSetoranData(filterStatus);
     }
-  }, [fromDate, toDate, selectedAreas, filterStatus, activeTab]);
+  }, [fromDate, toDate, selectedAreas, filterStatus, activeTab, noAreaSelected, dateRangeInvalid]);
 
   const fetchReportsData = async () => {
     try {
-      // ponytail: aggregate monthly data from API. Current endpoint returns daily.
-      // Upgrade: add ?aggregation=monthly to backend endpoint.
       const params: any = {
         fromDate,
         toDate,
@@ -173,7 +180,7 @@ export function ReportsPajakSetoran() {
       // Simple aggregation: group by month
       const dailyPoints: RevenuePoint[] = (r.data.data ?? []).map((p: any) => ({
         ...p,
-        month: new Date(p.date).toLocaleDateString("id-ID", { month: "short", year: "numeric" }),
+        month: new Date(p.date + "T00:00:00").toLocaleDateString("id-ID", { month: "short", year: "numeric" }),
       }));
 
       const monthlyData = dailyPoints.reduce((acc, p) => {
@@ -188,16 +195,14 @@ export function ReportsPajakSetoran() {
         return acc;
       }, [] as RevenuePoint[]);
 
-      setSummary(s.data.data ?? DUMMY_SUMMARY);
-      setSettlement(j.data.data ?? DUMMY_SETTLEMENT);
-      setRevenue(monthlyData.length ? monthlyData : DUMMY_REVENUE);
-      setIsDummy(monthlyData.length === 0);
+      setSummary(s.data.data ?? EMPTY_SUMMARY);
+      setSettlement(j.data.data ?? EMPTY_SETTLEMENT);
+      setRevenue(monthlyData);
     } catch (err) {
       console.error("Error fetching reports data:", err);
-      setSummary(DUMMY_SUMMARY);
-      setSettlement(DUMMY_SETTLEMENT);
-      setRevenue(DUMMY_REVENUE);
-      setIsDummy(true);
+      setSummary(null);
+      setSettlement(null);
+      setRevenue([]);
     }
   };
 
@@ -324,6 +329,12 @@ export function ReportsPajakSetoran() {
               label="Area Parkir"
             />
           </div>
+
+          {dateRangeInvalid && (
+            <div className="alert alert-danger" style={{ marginTop: "1rem" }}>
+              <Info size={16} strokeWidth={2} aria-hidden="true" /> Rentang tanggal tidak valid: "Dari Tanggal" harus sebelum "Sampai Tanggal".
+            </div>
+          )}
         </div>
       </div>
 
@@ -357,13 +368,13 @@ export function ReportsPajakSetoran() {
       {/* TAB 1: LAPORAN */}
       {activeTab === "reports" && (
         <>
-          {isDummy && (
-            <div className="alert alert-danger">
-              <Info size={16} strokeWidth={2} aria-hidden="true" /> Menampilkan data contoh. Data laporan belum tersedia dari server.
+          {noAreaSelected ? (
+            <div className="card">
+              <div className="text-muted" style={{ padding: "2rem", textAlign: "center" }}>
+                Pilih minimal satu area parkir untuk menampilkan laporan.
+              </div>
             </div>
-          )}
-
-          {!summary || !settlement ? (
+          ) : !summary || !settlement ? (
             <div className="loading">Memuat data...</div>
           ) : (
             <>
@@ -419,6 +430,14 @@ export function ReportsPajakSetoran() {
       {/* TAB 2: PAJAK */}
       {activeTab === "pajak" && (
         <>
+          {noAreaSelected ? (
+            <div className="card">
+              <div className="text-muted" style={{ padding: "2rem", textAlign: "center" }}>
+                Pilih minimal satu area parkir untuk menampilkan data pajak.
+              </div>
+            </div>
+          ) : (
+          <>
           {error && <div className="alert alert-danger">{error}</div>}
 
           <div className="grid grid-kpi">
@@ -516,12 +535,22 @@ export function ReportsPajakSetoran() {
               </tbody>
             </table>
           </div>
+          </>
+          )}
         </>
       )}
 
       {/* TAB 3: SETORAN */}
       {activeTab === "setoran" && (
         <>
+          {noAreaSelected ? (
+            <div className="card">
+              <div className="text-muted" style={{ padding: "2rem", textAlign: "center" }}>
+                Pilih minimal satu area parkir untuk menampilkan data setoran.
+              </div>
+            </div>
+          ) : (
+          <>
           {error && <div className="alert alert-danger">{error}</div>}
 
           <div className="grid grid-kpi">
@@ -641,6 +670,8 @@ export function ReportsPajakSetoran() {
               </tbody>
             </table>
           </div>
+          </>
+          )}
         </>
       )}
     </div>

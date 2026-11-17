@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { requireAuth, requireJukirOrAdmin, requireAdmin, requireJukir } from "../middleware/auth.js";
 import { getActiveMou } from "../lib/business.js";
+import { parseReportFilters, ReportFilterError } from "../lib/reportFilters.js";
 import { createXenditQrisPayment, isXenditEnabled } from "../services/xendit.js";
 
 export const jukirRouter = Router();
@@ -353,39 +354,34 @@ jukirRouter.get("/setoran/history", requireJukirOrAdmin, async (req, res, next) 
 // GET /api/jukir/setoran/report - Report pajak & setoran untuk admin
 jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
   try {
-    const { startDate, endDate, areaId, jukirId, status } = req.query as {
-      startDate?: string;
-      endDate?: string;
-      areaId?: string;
-      jukirId?: string;
+    const { status } = req.query as {
       status?: "PENDING" | "APPROVED" | "REJECTED";
     };
+    const { from, to, areaIds } = parseReportFilters(req.query);
 
     const now = new Date();
     const fallbackStart = new Date(now);
     fallbackStart.setDate(now.getDate() - 29);
     fallbackStart.setHours(0, 0, 0, 0);
+    const fallbackEnd = new Date(now);
+    fallbackEnd.setHours(23, 59, 59, 999);
 
-    const rangeStart = startDate ? toDayRange(startDate).startDate : fallbackStart;
-    const rangeEnd = endDate ? toDayRange(endDate).endDate : (() => {
-      const d = new Date(now);
-      d.setHours(23, 59, 59, 999);
-      return d;
-    })();
+    const rangeStart = from ?? fallbackStart;
+    const rangeEnd = to ?? fallbackEnd;
+
+    const areaFilter = areaIds.length ? { areaId: { in: areaIds } } : {};
 
     const whereClause: any = {
-      date: { gte: rangeStart, lte: rangeEnd },
-      ...(areaId ? { areaId } : {}),
-      ...(jukirId ? { jukirId } : {}),
+      date: { gte: rangeStart, lt: rangeEnd },
+      ...areaFilter,
       ...(status && ["PENDING", "APPROVED", "REJECTED"].includes(status) ? { status } : {}),
     };
 
     const txWhere: any = {
       status: "COMPLETED",
-      paidAt: { gte: rangeStart, lte: rangeEnd },
+      paidAt: { gte: rangeStart, lt: rangeEnd },
       amount: { not: null },
-      ...(areaId ? { areaId } : {}),
-      ...(jukirId ? { jukirId } : {}),
+      ...areaFilter,
     };
 
     const [txRows, mouRules] = await Promise.all([
@@ -539,6 +535,9 @@ jukirRouter.get("/setoran/report", requireAdmin, async (req, res, next) => {
       },
     });
   } catch (e) {
+    if (e instanceof ReportFilterError) {
+      return res.status(400).json({ success: false, message: e.message, code: "INVALID_DATE_RANGE" });
+    }
     next(e);
   }
 });
