@@ -81,7 +81,7 @@ _warmup()
 
 # Expiry-date pattern like "11.31", "11-31", "11 31" (with possible month/year
 # prefix/suffix). We strip it defensively before normalizing whitespace.
-_EXPIRY_RE = re.compile(r"\b\d{1,2}\s*[\.\-\s/]\s*\d{1,2}\b")
+_EXPIRY_RE = re.compile(r"\b\d{1,2}\s*[\.\-\s/·]\s*\d{1,2}\b")
 
 # Indonesian plate: 1-2 region letters + 1-4 digits + 1-3 letters (with optional spaces).
 _PLATE_RE = re.compile(r"^[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{0,3}$")
@@ -275,8 +275,13 @@ def _normalise_predictions(result):
 
 
 
-def _infer_license_plate_image(data: bytes):
-    """Run the Roboflow plate detector on one image, used by webcam frame uploads."""
+def _infer_license_plate_image(data: bytes, with_preview: bool = False):
+    """Run the Roboflow plate detector on one image, used by webcam frame uploads.
+
+    `with_preview` controls whether a base64 JPEG preview (with plate boxes) is
+    encoded and returned. Skipping it removes a large encode + base64 cost per
+    frame during live scanning; the preview is only needed when a frame is shown.
+    """
     import numpy as np
 
     arr = np.frombuffer(data, dtype=np.uint8)
@@ -287,6 +292,9 @@ def _infer_license_plate_image(data: bytes):
     client = _roboflow_client()
     result = client.infer(image, model_id=ROBOFLOW_MODEL_ID)
     predictions = _normalise_predictions(result)
+
+    if not with_preview:
+        return predictions, None
 
     # Return a preview with plate boxes, independent of the local YOLO model.
     preview = image.copy()
@@ -438,7 +446,7 @@ async def detect(file: UploadFile = File(...)):
 
 
 @app.post("/license-plate/webcam/detect")
-async def detect_license_plate_webcam_frame(file: UploadFile = File(...)):
+async def detect_license_plate_webcam_frame(file: UploadFile = File(...), preview: int = 0):
     """Accept one frame captured by the user's browser webcam and detect plates."""
     if not ROBOFLOW_API_KEY:
         raise HTTPException(
@@ -455,7 +463,7 @@ async def detect_license_plate_webcam_frame(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Frame webcam kosong")
 
     try:
-        predictions, preview = _infer_license_plate_image(data)
+        predictions, preview = _infer_license_plate_image(data, with_preview=bool(preview))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -1074,7 +1082,10 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
         # Collect ALL boxes with conf >= 0.3, sort by x_center (left-to-right)
         high_conf_boxes = [l for l in lines if l.get("confidence", 0) >= 0.3]
         high_conf_boxes.sort(key=lambda l: l.get("x_center", 0) or 0)
-        
+
+        # Drop the expiry-date line (small box below the plate) before matching.
+        main_text = select_main_plate_line(high_conf_boxes or lines)
+
         # If no high-conf boxes, use all_texts; otherwise use box texts
         if high_conf_boxes:
             box_texts = [l["text"] for l in high_conf_boxes]
@@ -1087,8 +1098,10 @@ async def extract_license_plate_text(file: UploadFile = File(...)):
             boxes = all_texts if all_texts else []
             confidence = 0.0
 
-        # Extract plate via regex on ALL collected text
-        plate = extract_plate(box_texts if high_conf_boxes else all_texts)
+        # Extract plate via regex on the main plate line only, after stripping
+        # any expiry-date fragment (e.g. "05·26") that sits beside/below the plate.
+        cleaned = clean_plate_text(main_text) if main_text else ""
+        plate = extract_plate([cleaned]) if cleaned else None
         if plate:
             plate_text = plate
             valid = True
