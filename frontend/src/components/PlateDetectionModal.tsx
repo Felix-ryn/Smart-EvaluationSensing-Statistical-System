@@ -9,7 +9,7 @@ interface PlateDetectionModalProps {
 }
 
 const PLATE_CONFIDENCE_THRESHOLD = 0.6; // Min detection confidence to accept a plate
-const FRAME_INTERVAL_MS = 600; // ~1.6 FPS, one request at a time
+const FRAME_INTERVAL_MS = 300; // ~3.3 FPS, one request at a time
 const MAX_FRAME_WIDTH = 640;
 
 // Indonesian plate: 1-2 region letters + 1-4 digits + 0-3 letters.
@@ -37,6 +37,7 @@ export function PlateDetectionModal({
   const [ready, setReady] = useState(false);
   const [previewFrame, setPreviewFrame] = useState<string | null>(null);
   const [detectedPlate, setDetectedPlate] = useState<string | null>(null);
+  const [plateBox, setPlateBox] = useState<{ x: number; y: number; w: number; h: number; confidence: number } | null>(null);
   const [status, setStatus] = useState<string>("Memindai...");
 
   const stopCamera = () => {
@@ -200,6 +201,7 @@ export function PlateDetectionModal({
         console.log("[PlateDetection] detect predictions:", predictions.length);
         if (predictions.length === 0) {
           setError(null); // no plate yet, keep scanning silently
+          setPlateBox(null);
           setStatus("Plat belum terdeteksi");
           return;
         }
@@ -207,6 +209,16 @@ export function PlateDetectionModal({
         const best = predictions.reduce((a: any, b: any) =>
           (b.confidence || 0) > (a.confidence || 0) ? b : a
         );
+
+        // Store the plate box (center-based, in canvas pixels) to draw an
+        // overlay on the video. Canvas is downscaled to max 640px wide.
+        setPlateBox({
+          x: best.x || 0,
+          y: best.y || 0,
+          w: best.width || 0,
+          h: best.height || 0,
+          confidence: best.confidence || 0,
+        });
 
         setStatus("Membaca teks plat...");
 
@@ -311,6 +323,21 @@ export function PlateDetectionModal({
               style={{ width: "100%", height: "auto", borderRadius: "8px" }}
             />
             <canvas ref={canvasRef} style={{ display: "none" }} />
+            {plateBox && !detectedPlate && (
+              <div
+                className="plate-box-overlay"
+                style={{
+                  left: `${((plateBox.x - plateBox.w / 2) / 640) * 100}%`,
+                  top: `${((plateBox.y - plateBox.h / 2) / 640) * 100}%`,
+                  width: `${(plateBox.w / 640) * 100}%`,
+                  height: `${(plateBox.h / 640) * 100}%`,
+                }}
+              >
+                <span className="plate-box-label">
+                  plat {Math.round(plateBox.confidence * 100)}%
+                </span>
+              </div>
+            )}
             {!ready && !error && (
               <div className="loading-overlay">
                 <p>Menyalakan kamera...</p>
@@ -385,6 +412,27 @@ export function PlateDetectionModal({
           color: white;
           font-size: 14px;
           border-radius: 8px;
+        }
+
+        .plate-box-overlay {
+          position: absolute;
+          border: 2px solid #00dc50;
+          border-radius: 4px;
+          pointer-events: none;
+        }
+
+        .plate-box-label {
+          position: absolute;
+          top: -22px;
+          left: -2px;
+          background: #00dc50;
+          color: #06220d;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1;
+          padding: 3px 6px;
+          border-radius: 3px;
+          white-space: nowrap;
         }
 
         .plate-read-overlay {
